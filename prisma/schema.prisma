@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  stores    Store[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Store {
+  id           String     @id @default(cuid())
+  name         String
+  categoryId   String
+  category     Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  items        Item[]
+  transfersOut Transfer[] @relation("SourceStore")
+  transfersIn  Transfer[] @relation("TargetStore")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([name, categoryId])
+}
+
+model Item {
+  id          String  @id @default(cuid())
+  name        String
+  unit        String
+  rate        Float
+  quantity    Float
+  lowStockAt  Float   @default(0)   // threshold set by user on first stock-in
+  storeId     String
+  store       Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  transfersOut Transfer[] @relation("SourceItem")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, storeId])
+}
+
+model Transfer {
+  id            String   @id @default(cuid())
+  sourceStoreId String
+  targetStoreId String
+  sourceItemId  String
+  itemName      String
+  unit          String
+  rate          Float
+  quantity      Float
+  createdAt     DateTime @default(now())
+
+  sourceStore Store @relation("SourceStore", fields: [sourceStoreId], references: [id])
+  targetStore Store @relation("TargetStore", fields: [targetStoreId], references: [id])
+  sourceItem  Item  @relation("SourceItem", fields: [sourceItemId], references: [id])
+}
+

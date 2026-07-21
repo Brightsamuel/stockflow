@@ -1,0 +1,249 @@
+.sidebar {
+  width: 220px;
+  min-width: 220px;
+  height: 100vh;
+  background: var(--surface-1);
+  border-right: 0.5px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  left: 0;
+  top: 0;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px;
+  border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+}
+
+.appName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.appSub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.nav {
+  padding: 12px 8px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.navLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 4px 8px 8px;
+}
+
+.noCats {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 8px 12px;
+  line-height: 1.5;
+}
+
+.catBlock {
+  margin-bottom: 2px;
+}
+
+.catRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.catRow:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.arrow {
+  font-size: 12px;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.arrowOpen {
+  transform: rotate(90deg);
+}
+
+.storeList {
+  padding-left: 20px;
+  margin-bottom: 4px;
+}
+
+.storeRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.storeRow:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.storeRow.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.storeRow.active .dot {
+  opacity: 1;
+}
+
+.addStoreBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.1s;
+}
+
+.addStoreBtn:hover {
+  color: var(--text-secondary);
+}
+
+.newCatBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: 0.5px dashed var(--border-strong);
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.newCatBtn:hover {
+  color: var(--text-secondary);
+  border-color: var(--text-muted);
+}
+
+.inlineForm,
+.newCatForm {
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inlineInput {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: border-color 0.15s;
+}
+
+.inlineInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.inlineInput::placeholder {
+  color: var(--text-muted);
+}
+
+.inlineActions {
+  display: flex;
+  gap: 6px;
+}
+
+.inlineSubmit {
+  flex: 1;
+  padding: 5px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.inlineSubmit:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.inlineSubmit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inlineCancel {
+  flex: 1;
+  padding: 5px;
+  background: transparent;
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.inlineCancel:hover {
+  color: var(--text-secondary);
+}
