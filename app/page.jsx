@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import Sidebar from '@/components/Sidebar'
-import styles from '@/app/store/[id]/store.module.css'
+import styles from '@/dashboard/store.module.css'
 
 export default async function RootPage() {
   const firstStore = await prisma.store.findFirst({
