@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -21,50 +16,81 @@ model Category {
 }
 
 model Store {
-  id           String     @id @default(cuid())
+  id           String       @id @default(cuid())
   name         String
   categoryId   String
-  category     Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  items        Item[]
-  transfersOut Transfer[] @relation("SourceStore")
-  transfersIn  Transfer[] @relation("TargetStore")
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  category     Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  entries      StockEntry[]
+  transfersOut Transfer[]   @relation("SourceStore")
+  transfersIn  Transfer[]   @relation("TargetStore")
+  logs         StockLog[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   @@unique([name, categoryId])
 }
 
-model Item {
-  id          String  @id @default(cuid())
-  name        String
-  unit        String
-  rate        Float
-  quantity    Float
-  lowStockAt  Float   @default(0)   // threshold set by user on first stock-in
-  storeId     String
-  store       Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+// Master unit catalogue — e.g. kg, litre, pair, bag
+model Unit {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
 
-  transfersOut Transfer[] @relation("SourceItem")
+// Master product catalogue — created once, used across all stores
+model Product {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  unitId    String
+  unit      Unit         @relation(fields: [unitId], references: [id])
+  entries   StockEntry[]
+  logs      StockLog[]
+  transfers Transfer[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
 
+// One row per product per store — holds current balance and rate
+// Rate is per-store and can change over time via new stock-ins
+model StockEntry {
+  id         String   @id @default(cuid())
+  productId  String
+  storeId    String
+  rate       Float    // current rate in this store — updated on each stock-in
+  quantity   Float    // current balance (running total)
+  lowStockAt Float    @default(0)
+  product    Product  @relation(fields: [productId], references: [id])
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([productId, storeId])
+}
+
+// Every movement is written here — immutable audit trail
+model StockLog {
+  id        String   @id @default(cuid())
+  storeId   String
+  productId String
+  type      String   // "IN" | "TRANSFER_IN" | "TRANSFER_OUT"
+  quantity  Float
+  rate      Float    // rate at time of this log entry
+  note      String?  // optional note e.g. transfer reference
+  store     Store    @relation(fields: [storeId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([name, storeId])
 }
 
 model Transfer {
   id            String   @id @default(cuid())
   sourceStoreId String
   targetStoreId String
-  sourceItemId  String
-  itemName      String
-  unit          String
-  rate          Float
+  productId     String
   quantity      Float
   createdAt     DateTime @default(now())
 
-  sourceStore Store @relation("SourceStore", fields: [sourceStoreId], references: [id])
-  targetStore Store @relation("TargetStore", fields: [targetStoreId], references: [id])
-  sourceItem  Item  @relation("SourceItem", fields: [sourceItemId], references: [id])
+  sourceStore Store   @relation("SourceStore", fields: [sourceStoreId], references: [id])
+  targetStore Store   @relation("TargetStore", fields: [targetStoreId], references: [id])
+  product     Product @relation(fields: [productId], references: [id])
 }
-

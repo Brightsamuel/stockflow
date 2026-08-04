@@ -1,46 +1,69 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
 
+// POST /api/stores/:id/stock-in
+// Body: { productId, rate, quantity, lowStockAt? }
 export async function POST(req, { params }) {
+  const { id } = await params
   try {
-    const { id } = await params
-    const { name, unit, rate, quantity, lowStockAt } = await req.json()
+    const { productId, rate, quantity, lowStockAt } = await req.json()
 
-    if (!name?.trim() || !unit?.trim() || rate == null || quantity == null)
-      return NextResponse.json({ error: "name, unit, rate and quantity are required" }, { status: 400 })
+    if (!productId || rate == null || quantity == null)
+      return NextResponse.json({ error: "productId, rate and quantity are required" }, { status: 400 })
     if (rate <= 0 || quantity <= 0)
-      return NextResponse.json({ error: "rate and quantity must be greater than 0" }, { status: 400 })
+      return NextResponse.json({ error: "Rate and quantity must be greater than 0" }, { status: 400 })
 
     const store = await prisma.store.findUnique({ where: { id } })
     if (!store) return NextResponse.json({ error: "Store not found" }, { status: 404 })
 
-    const existing = await prisma.item.findUnique({
-      where: { name_storeId: { name: name.trim(), storeId: id } },
-    })
+    const product = await prisma.product.findUnique({ where: { id: productId } })
+    if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 })
 
-    let item
-    if (existing) {
-      // Already exists — add to quantity only
-      item = await prisma.item.update({
-        where: { id: existing.id },
-        data: { quantity: existing.quantity + quantity },
+    const result = await prisma.$transaction(async (tx) => {
+      // Upsert the stock entry — create or update quantity
+      const existing = await tx.stockEntry.findUnique({
+        where: { productId_storeId: { productId, storeId: id } },
       })
-    } else {
-      // New item — create with lowStockAt threshold
-      item = await prisma.item.create({
+
+      let entry
+      if (existing) {
+        entry = await tx.stockEntry.update({
+          where: { id: existing.id },
+          data: {
+            quantity: { increment: quantity },
+            rate, // update rate to the latest stock-in rate
+            ...(lowStockAt != null && { lowStockAt }),
+          },
+        })
+      } else {
+        entry = await tx.stockEntry.create({
+          data: {
+            productId,
+            storeId: id,
+            rate,
+            quantity,
+            lowStockAt: lowStockAt ?? 0,
+          },
+        })
+      }
+
+      // Write to stock log
+      await tx.stockLog.create({
         data: {
-          name: name.trim(),
-          unit: unit.trim(),
-          rate,
-          quantity,
-          lowStockAt: lowStockAt ?? 0,
           storeId: id,
+          productId,
+          type: "IN",
+          quantity,
+          rate,
         },
       })
-    }
 
-    return NextResponse.json({ ...item, price: item.rate * item.quantity }, { status: 201 })
+      return entry
+    })
+
+    return NextResponse.json(result, { status: 201 })
   } catch (e) {
+    console.error(e)
     return NextResponse.json({ error: "Failed to add stock" }, { status: 500 })
   }
 }

@@ -15,7 +15,7 @@ export default async function RootPage() {
   const categories = await prisma.category.findMany({
     include: {
       stores: {
-        include: { _count: { select: { items: true } } },
+        include: { _count: { select: { entries: true } } },
         orderBy: { createdAt: 'asc' },
       },
     },

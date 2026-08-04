@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './store.module.css'
 
@@ -16,19 +16,29 @@ function timeAgo(date) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-// ── Stock In Modal ─────────────────────────────────────────────────────────
-function StockInModal({ storeId, onClose, onDone }) {
-  const [form, setForm] = useState({ name: '', unit: 'kg', rate: '', quantity: '', lowStockAt: '' })
+// ── Inline Add Item Row ─────────────────────────────────────────────────────
+function AddItemRow({ storeId, onDone, onCancel }) {
+  const [products, setProducts] = useState([])
+  const [loadingProducts, setLoadingProducts] = useState(true)
+  const [form, setForm] = useState({ productId: '', rate: '', quantity: '', lowStockAt: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const price = form.rate && form.quantity ? (parseFloat(form.rate) * parseFloat(form.quantity)) : null
+  useEffect(() => {
+    fetch('/api/products')
+      .then(res => res.json())
+      .then(data => setProducts(Array.isArray(data) ? data : []))
+      .catch(() => setProducts([]))
+      .finally(() => setLoadingProducts(false))
+  }, [])
+
+  const selectedProduct = products.find(p => p.id === form.productId)
 
   function set(field, val) { setForm(f => ({ ...f, [field]: val })) }
 
   async function submit() {
-    if (!form.name.trim() || !form.rate || !form.quantity) {
-      setError('Name, rate and quantity are required.'); return
+    if (!form.productId || !form.rate || !form.quantity) {
+      setError('Product, rate and quantity are required.'); return
     }
     setLoading(true); setError('')
     try {
@@ -36,8 +46,7 @@ function StockInModal({ storeId, onClose, onDone }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: form.name.trim(),
-          unit: form.unit,
+          productId: form.productId,
           rate: parseFloat(form.rate),
           quantity: parseFloat(form.quantity),
           lowStockAt: form.lowStockAt ? parseFloat(form.lowStockAt) : 0,
@@ -53,66 +62,66 @@ function StockInModal({ storeId, onClose, onDone }) {
   }
 
   return (
-    <div className={styles.backdrop} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={styles.modal}>
-        <div className={styles.modalHeader}>
-          <h3>Stock in</h3>
-          <button className={styles.closeBtn} onClick={onClose}><i className="ti ti-x" /></button>
-        </div>
-
-        <div className={styles.modalBody}>
-          <div className={styles.field}>
-            <label>Item name</label>
-            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Maize" />
+    <>
+      <tr className={styles.addRow}>
+        <td colSpan={2}>
+          <select
+            value={form.productId}
+            onChange={e => set('productId', e.target.value)}
+            disabled={loadingProducts}
+            className={styles.inlineSelect}
+          >
+            <option value="">
+              {loadingProducts ? 'Loading…' : '— select product —'}
+            </option>
+            {products.map(p => (
+              <option key={p.id} value={p.id}>{p.name} ({p.unit.name})</option>
+            ))}
+          </select>
+        </td>
+        <td>
+          <input
+            type="number" min="0" placeholder="Rate"
+            value={form.rate} onChange={e => set('rate', e.target.value)}
+            className={styles.inlineInputSmall}
+          />
+        </td>
+        <td>
+          <input
+            type="number" min="0" placeholder="Qty"
+            value={form.quantity} onChange={e => set('quantity', e.target.value)}
+            className={styles.inlineInputSmall}
+          />
+        </td>
+        <td>
+          <input
+            type="number" min="0" placeholder="Low at"
+            value={form.lowStockAt} onChange={e => set('lowStockAt', e.target.value)}
+            className={styles.inlineInputSmall}
+          />
+        </td>
+        <td colSpan={5}>
+          <div className={styles.rowActions}>
+            <button className={styles.btnPrimary} onClick={submit} disabled={loading || !form.productId}>
+              {loading ? '…' : 'Add'}
+            </button>
+            <button className={styles.btnGhost} onClick={onCancel}>Cancel</button>
           </div>
-
-          <div className={styles.fieldRow}>
-            <div className={styles.field}>
-              <label>Unit</label>
-              <select value={form.unit} onChange={e => set('unit', e.target.value)}>
-                <option>kg</option>
-                <option>litre</option>
-                <option>pair</option>
-                <option>item</option>
-                <option>bag</option>
-                <option>box</option>
-                <option>tonne</option>
-              </select>
-            </div>
-            <div className={styles.field}>
-              <label>Rate (UGX per {form.unit})</label>
-              <input type="number" min="0" value={form.rate} onChange={e => set('rate', e.target.value)} placeholder="0" />
-            </div>
-          </div>
-
-          <div className={styles.fieldRow}>
-            <div className={styles.field}>
-              <label>Quantity</label>
-              <input type="number" min="0" value={form.quantity} onChange={e => set('quantity', e.target.value)} placeholder="0" />
-            </div>
-            <div className={styles.field}>
-              <label>Low stock alert at</label>
-              <input type="number" min="0" value={form.lowStockAt} onChange={e => set('lowStockAt', e.target.value)} placeholder="e.g. 5" />
-            </div>
-          </div>
-
-          {price !== null && (
-            <div className={styles.priceHint}>
-              <i className="ti ti-calculator" /> Total value: <strong>UGX {fmt(price)}</strong>
-            </div>
-          )}
-
-          {error && <p className={styles.errorMsg}>{error}</p>}
-        </div>
-
-        <div className={styles.modalFooter}>
-          <button className={styles.btnGhost} onClick={onClose}>Cancel</button>
-          <button className={styles.btnPrimary} onClick={submit} disabled={loading}>
-            {loading ? 'Adding…' : 'Add to stock'}
-          </button>
-        </div>
-      </div>
-    </div>
+        </td>
+      </tr>
+      {!loadingProducts && products.length === 0 && (
+        <tr>
+          <td colSpan={10} className={styles.fieldHint}>
+            No products yet — create one in the Products section first.
+          </td>
+        </tr>
+      )}
+      {error && (
+        <tr>
+          <td colSpan={10} className={styles.errorMsg}>{error}</td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -141,7 +150,7 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
         body: JSON.stringify({
           sourceStoreId: store.id,
           targetStoreId,
-          sourceItemId: selectedItemId,
+          productId: selectedItem.productId,
           quantity: parseFloat(quantity),
         }),
       })
@@ -230,8 +239,6 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
 // ── Edit Item Modal ────────────────────────────────────────────────────────
 function EditItemModal({ item, onClose, onDone }) {
   const [form, setForm] = useState({
-    name: item.name,
-    unit: item.unit,
     rate: String(item.rate),
     quantity: String(item.quantity),
     lowStockAt: String(item.lowStockAt),
@@ -248,8 +255,6 @@ function EditItemModal({ item, onClose, onDone }) {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: form.name.trim(),
-          unit: form.unit.trim(),
           rate: parseFloat(form.rate),
           quantity: parseFloat(form.quantity),
           lowStockAt: parseFloat(form.lowStockAt) || 0,
@@ -273,31 +278,25 @@ function EditItemModal({ item, onClose, onDone }) {
         </div>
         <div className={styles.modalBody}>
           <div className={styles.field}>
-            <label>Item name</label>
-            <input value={form.name} onChange={e => set('name', e.target.value)} />
+            <label>Product</label>
+            <input value={`${item.name} (${item.unit})`} disabled className={styles.disabledInput} />
+            <span className={styles.fieldHint}>
+              To rename this product or change its unit, edit it in the Products section.
+            </span>
           </div>
           <div className={styles.fieldRow}>
             <div className={styles.field}>
-              <label>Unit</label>
-              <select value={form.unit} onChange={e => set('unit', e.target.value)}>
-                <option>kg</option><option>litre</option><option>pair</option>
-                <option>item</option><option>bag</option><option>box</option><option>tonne</option>
-              </select>
-            </div>
-            <div className={styles.field}>
-              <label>Rate (UGX)</label>
+              <label>Rate (UGX per {item.unit})</label>
               <input type="number" value={form.rate} onChange={e => set('rate', e.target.value)} />
             </div>
-          </div>
-          <div className={styles.fieldRow}>
             <div className={styles.field}>
               <label>Quantity</label>
               <input type="number" value={form.quantity} onChange={e => set('quantity', e.target.value)} />
             </div>
-            <div className={styles.field}>
-              <label>Low stock alert at</label>
-              <input type="number" value={form.lowStockAt} onChange={e => set('lowStockAt', e.target.value)} />
-            </div>
+          </div>
+          <div className={styles.field}>
+            <label>Low stock alert at</label>
+            <input type="number" value={form.lowStockAt} onChange={e => set('lowStockAt', e.target.value)} />
           </div>
           {error && <p className={styles.errorMsg}>{error}</p>}
         </div>
@@ -316,7 +315,8 @@ function EditItemModal({ item, onClose, onDone }) {
 export default function StoreDashboard({ store, allStores, transfers }) {
   const router = useRouter()
   const [tab, setTab] = useState('inventory')
-  const [modal, setModal] = useState(null) // 'in' | 'out' | {edit: item}
+  const [modal, setModal] = useState(null) // 'out' | {edit: item}
+  const [addingItem, setAddingItem] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
 
   function refresh() {
@@ -350,7 +350,7 @@ export default function StoreDashboard({ store, allStores, transfers }) {
           </span>
         </div>
         <div className={styles.topbarActions}>
-          <button className={styles.btnGhost} onClick={() => setModal('in')}>
+          <button className={styles.btnGhost} onClick={() => setAddingItem(true)}>
             <i className="ti ti-arrow-bar-down" /> Stock in
           </button>
           <button className={styles.btnPrimary} onClick={() => setModal('out')}>
@@ -395,7 +395,7 @@ export default function StoreDashboard({ store, allStores, transfers }) {
             </div>
 
             {/* Items table */}
-            {store.items.length === 0 ? (
+            {store.items.length === 0 && !addingItem ? (
               <div className={styles.tableEmpty}>
                 <i className="ti ti-package" style={{ fontSize: 32, color: 'var(--text-muted)' }} />
                 <p>No items yet. Use <strong>Stock in</strong> to add your first item.</p>
@@ -408,9 +408,12 @@ export default function StoreDashboard({ store, allStores, transfers }) {
                       <th>Item</th>
                       <th>Unit</th>
                       <th>Rate (UGX)</th>
-                      <th>Qty</th>
+                      <th>Added</th>
+                      <th>Deducted</th>
+                      <th>Balance</th>
                       <th>Total value</th>
                       <th>Status</th>
+                      <th>Added on</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -420,6 +423,8 @@ export default function StoreDashboard({ store, allStores, transfers }) {
                         <td className={styles.itemName}>{item.name}</td>
                         <td className={styles.mono}>{item.unit}</td>
                         <td className={styles.mono}>{fmt(item.rate)}</td>
+                        <td className={styles.mono}>{fmt(item.totalAdded)}</td>
+                        <td className={styles.mono}>{fmt(item.totalDeducted)}</td>
                         <td className={styles.mono}>{fmt(item.quantity)}</td>
                         <td className={styles.mono}>{fmt(item.price)}</td>
                         <td>
@@ -429,6 +434,7 @@ export default function StoreDashboard({ store, allStores, transfers }) {
                             <span className={styles.badgeOk}>OK</span>
                           )}
                         </td>
+                        <td className={styles.mono}>{timeAgo(item.createdAt)}</td>
                         <td>
                           <div className={styles.rowActions}>
                             <button
@@ -450,6 +456,13 @@ export default function StoreDashboard({ store, allStores, transfers }) {
                         </td>
                       </tr>
                     ))}
+                    {addingItem && (
+                      <AddItemRow
+                        storeId={store.id}
+                        onDone={() => { setAddingItem(false); router.refresh() }}
+                        onCancel={() => setAddingItem(false)}
+                      />
+                    )}
                   </tbody>
                 </table>
               </div>

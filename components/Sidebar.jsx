@@ -1,10 +1,11 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './Sidebar.module.css'
 
 export default function Sidebar({ categories, activeStoreId }) {
   const router = useRouter()
+  const [categoryList, setCategoryList] = useState(categories)
   const [openCats, setOpenCats] = useState(() => {
     const initial = {}
     categories.forEach(cat => {
@@ -12,6 +13,36 @@ export default function Sidebar({ categories, activeStoreId }) {
     })
     return initial
   })
+
+  async function refreshCategories() {
+    try {
+      const res = await fetch('/api/categories')
+      const data = await res.json().catch(() => [])
+      if (!Array.isArray(data)) return
+
+      setCategoryList(data)
+      setOpenCats(prev => {
+        const next = {}
+        data.forEach(cat => {
+          next[cat.id] = prev[cat.id] ?? true
+        })
+        return next
+      })
+    } catch {
+      // keep the current sidebar state if the refetch fails
+    }
+  }
+
+  useEffect(() => {
+    setCategoryList(categories)
+    setOpenCats(prev => {
+      const next = {}
+      categories.forEach(cat => {
+        next[cat.id] = prev[cat.id] ?? true
+      })
+      return next
+    })
+  }, [categories])
 
   const [showNewCat, setShowNewCat] = useState(false)
   const [showNewStore, setShowNewStore] = useState(null)
@@ -43,6 +74,7 @@ export default function Sidebar({ categories, activeStoreId }) {
 
       setNewCatName('')
       setShowNewCat(false)
+      await refreshCategories()
       router.refresh()
     } catch (error) {
       setActionMessage(error.message || 'Unable to create category')
@@ -66,6 +98,7 @@ export default function Sidebar({ categories, activeStoreId }) {
       if (!res.ok) throw new Error(data.error || 'Unable to rename category')
 
       setEditingCatId(null)
+      await refreshCategories()
       router.refresh()
     } catch (error) {
       setActionMessage(error.message || 'Unable to rename category')
@@ -84,6 +117,7 @@ export default function Sidebar({ categories, activeStoreId }) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Unable to delete category')
 
+      await refreshCategories()
       router.refresh()
     } catch (error) {
       setActionMessage(error.message || 'Unable to delete category')
@@ -107,6 +141,7 @@ export default function Sidebar({ categories, activeStoreId }) {
       if (!res.ok) throw new Error(data.error || 'Unable to rename store')
 
       setEditingStoreId(null)
+      await refreshCategories()
       router.refresh()
     } catch (error) {
       setActionMessage(error.message || 'Unable to rename store')
@@ -125,6 +160,7 @@ export default function Sidebar({ categories, activeStoreId }) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Unable to delete store')
 
+      await refreshCategories()
       router.refresh()
       if (activeStoreId === storeId) {
         router.push('/')
@@ -153,6 +189,7 @@ export default function Sidebar({ categories, activeStoreId }) {
 
       setNewStoreName('')
       setShowNewStore(null)
+      await refreshCategories()
       router.push(`/store/${data.id}`)
       router.refresh()
     } catch (error) {
@@ -173,9 +210,13 @@ export default function Sidebar({ categories, activeStoreId }) {
       </div>
 
       <div className={styles.nav}>
+        <button className={styles.addStoreBtn} onClick={() => router.push('/products')}>
+          <i className="ti ti-box" style={{ fontSize: 13 }} /> Manage products
+        </button>
+
         <div className={styles.navLabel}>Categories</div>
 
-        {categories.map(cat => (
+        {categoryList.map(cat => (
           <div key={cat.id} className={styles.catBlock}>
             <div className={styles.catHeader}>
               <button
