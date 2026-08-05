@@ -210,8 +210,12 @@ export default function Sidebar({ categories, activeStoreId }) {
       </div>
 
       <div className={styles.nav}>
+        <div className={styles.navLabel} style={{ marginTop: 20 }}>Catalogue</div>
         <button className={styles.addStoreBtn} onClick={() => router.push('/products')}>
           <i className="ti ti-box" style={{ fontSize: 13 }} /> Manage products
+        </button>
+        <button className={styles.addStoreBtn} onClick={() => router.push('/search')}>
+          <i className="ti ti-history" style={{ fontSize: 13 }} /> Product history
         </button>
 
         <div className={styles.navLabel}>Categories</div>

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './store.module.css'
 
@@ -9,15 +9,23 @@ function fmt(n) {
 }
 
 function timeAgo(date) {
-  const diff = (Date.now() - new Date(date)) / 1000
+  const d = new Date(date)
+  const diff = (Date.now() - d) / 1000
+
   if (diff < 60) return 'just now'
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 172800) return 'yesterday'
+
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yy = String(d.getFullYear()).slice(-2)
+  return `${dd}/${mm}/${yy}`
 }
 
 // ── Inline Add Item Row ─────────────────────────────────────────────────────
 function AddItemRow({ storeId, onDone, onCancel }) {
+  const rowRef = useRef(null)
   const [products, setProducts] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [form, setForm] = useState({ productId: '', rate: '', quantity: '', lowStockAt: '' })
@@ -25,6 +33,7 @@ function AddItemRow({ storeId, onDone, onCancel }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
+      rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     fetch('/api/products')
       .then(res => res.json())
       .then(data => setProducts(Array.isArray(data) ? data : []))
@@ -63,7 +72,7 @@ function AddItemRow({ storeId, onDone, onCancel }) {
 
   return (
     <>
-      <tr className={styles.addRow}>
+      <tr className={styles.addRow} ref={rowRef}>
         <td colSpan={2}>
           <select
             value={form.productId}
@@ -413,7 +422,7 @@ export default function StoreDashboard({ store, allStores, transfers }) {
                       <th>Balance</th>
                       <th>Total value</th>
                       <th>Status</th>
-                      <th>Added on</th>
+                      <th>Last updated</th>
                       <th></th>
                     </tr>
                   </thead>
