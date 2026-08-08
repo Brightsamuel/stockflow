@@ -1,7 +1,14 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
+import { requireUser } from "@/lib/auth"
 
 export async function GET(req) {
+  try {
+    await requireUser()
+  } catch (e) {
+    return NextResponse.json({ error: "You must be signed in to do this" }, { status: 401 })
+  }
+
   try {
     const { searchParams } = new URL(req.url)
     const storeId = searchParams.get("storeId")
@@ -24,6 +31,13 @@ export async function GET(req) {
 }
 
 export async function POST(req) {
+  let user
+  try {
+    user = await requireUser()
+  } catch (e) {
+    return NextResponse.json({ error: "You must be signed in to do this" }, { status: 401 })
+  }
+
   try {
     const { sourceStoreId, targetStoreId, productId, quantity } = await req.json()
 
@@ -34,7 +48,6 @@ export async function POST(req) {
     if (sourceStoreId === targetStoreId)
       return NextResponse.json({ error: "Source and target cannot be the same" }, { status: 400 })
 
-    // Check source has enough stock
     const sourceEntry = await prisma.stockEntry.findUnique({
       where: { productId_storeId: { productId, storeId: sourceStoreId } },
     })
@@ -47,23 +60,29 @@ export async function POST(req) {
       )
 
     const [sourceStore, targetStore] = await Promise.all([
-      prisma.store.findUnique({ where: { id: sourceStoreId } }),
-      prisma.store.findUnique({ where: { id: targetStoreId } }),
+      prisma.store.findUnique({
+        where: { id: sourceStoreId },
+        include: { category: { select: { trackLogs: true } } },
+      }),
+      prisma.store.findUnique({
+        where: { id: targetStoreId },
+        include: { category: { select: { trackLogs: true } } },
+      }),
     ])
     if (!sourceStore)
       return NextResponse.json({ error: "Source store not found" }, { status: 404 })
     if (!targetStore)
       return NextResponse.json({ error: "Target store not found" }, { status: 404 })
 
+    const sourceLogUserId = sourceStore.category.trackLogs ? user.id : null
+    const targetLogUserId = targetStore.category.trackLogs ? user.id : null
+
     const result = await prisma.$transaction(async (tx) => {
-      // Reduce source
       await tx.stockEntry.update({
         where: { id: sourceEntry.id },
         data: { quantity: { decrement: quantity } },
       })
 
-      // Increase or create target entry
-      // Rate is NOT transferred — target keeps its own rate or starts at 0
       const existingTarget = await tx.stockEntry.findUnique({
         where: { productId_storeId: { productId, storeId: targetStoreId } },
       })
@@ -74,15 +93,19 @@ export async function POST(req) {
           data: { quantity: { increment: quantity } },
         })
       } else {
-        // New entry in target — rate is 0 until they do a stock-in with a price
         await tx.stockEntry.create({
           data: { productId, storeId: targetStoreId, rate: 0, quantity },
         })
       }
 
-      // Record the transfer
       const transfer = await tx.transfer.create({
-        data: { sourceStoreId, targetStoreId, productId, quantity },
+        data: {
+          sourceStoreId,
+          targetStoreId,
+          productId,
+          quantity,
+          userId: sourceLogUserId || targetLogUserId ? user.id : null,
+        },
         include: {
           product: { include: { unit: true } },
           sourceStore: { select: { id: true, name: true, category: { select: { name: true } } } },
@@ -90,7 +113,6 @@ export async function POST(req) {
         },
       })
 
-      // Log both sides
       await tx.stockLog.create({
         data: {
           storeId: sourceStoreId,
@@ -99,6 +121,7 @@ export async function POST(req) {
           quantity,
           rate: sourceEntry.rate,
           note: `Transferred to ${targetStore.name}`,
+          userId: sourceLogUserId,
         },
       })
       await tx.stockLog.create({
@@ -107,8 +130,9 @@ export async function POST(req) {
           productId,
           type: "TRANSFER_IN",
           quantity,
-          rate: sourceEntry.rate, // snapshot of source rate for reference
+          rate: sourceEntry.rate,
           note: `Received from ${sourceStore.name}`,
+          userId: targetLogUserId,
         },
       })
 

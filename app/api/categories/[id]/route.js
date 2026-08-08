@@ -4,18 +4,19 @@ import { NextResponse } from "next/server"
 export async function PATCH(req, { params }) {
   const { id } = await params
   try {
-    const { name } = await req.json()
-    if (!name?.trim())
-      return NextResponse.json({ error: "Name required" }, { status: 400 })
-    const category = await prisma.category.update({
-      where: { id },
-      data: { name: name.trim() },
-    })
+    const { name, trackLogs } = await req.json()
+    const data = {}
+    if (name?.trim()) data.name = name.trim()
+    if (trackLogs != null) data.trackLogs = trackLogs
+    if (!Object.keys(data).length)
+      return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
+
+    const category = await prisma.category.update({ where: { id }, data })
     return NextResponse.json(category)
   } catch (e) {
     if (e.code === "P2002")
-      return NextResponse.json({ error: "Category name already exists" }, { status: 409 })
-    return NextResponse.json({ error: "Failed to rename" }, { status: 500 })
+      return NextResponse.json({ error: "Category already exists" }, { status: 409 })
+    return NextResponse.json({ error: "Failed to rename category" }, { status: 500 })
   }
 }
 

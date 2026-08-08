@@ -16,10 +16,12 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    const { name } = await req.json()
+    const { name, trackLogs } = await req.json()
     if (!name?.trim())
       return NextResponse.json({ error: "Name required" }, { status: 400 })
-    const category = await prisma.category.create({ data: { name: name.trim() } })
+    const category = await prisma.category.create({
+      data: { name: name.trim(), trackLogs: !!trackLogs },
+    })
     return NextResponse.json(category, { status: 201 })
   } catch (e) {
     if (e.code === "P2002")

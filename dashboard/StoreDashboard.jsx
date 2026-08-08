@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { apiFetch } from '@/lib/apiFetch'
 import styles from './store.module.css'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ function AddItemRow({ storeId, onDone, onCancel }) {
     }
     setLoading(true); setError('')
     try {
-      const res = await fetch(`/api/stores/${storeId}/stock-in`, {
+      const res = await apiFetch(`/api/stores/${storeId}/stock-in`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -153,7 +154,7 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
     }
     setLoading(true); setError('')
     try {
-      const res = await fetch('/api/transfers', {
+      const res = await apiFetch('/api/transfers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -260,7 +261,7 @@ function EditItemModal({ item, onClose, onDone }) {
   async function submit() {
     setLoading(true); setError('')
     try {
-      const res = await fetch(`/api/items/${item.id}`, {
+      const res = await apiFetch(`/api/items/${item.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -336,7 +337,7 @@ export default function StoreDashboard({ store, allStores, transfers }) {
   async function deleteItem(id) {
     if (!confirm('Remove this item from the store?')) return
     setDeletingId(id)
-    await fetch(`/api/items/${id}`, { method: 'DELETE' })
+    await apiFetch(`/api/items/${id}`, { method: 'DELETE' })
     setDeletingId(null)
     router.refresh()
   }

@@ -1,10 +1,18 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
+import { requireUser } from "@/lib/auth"
 
 // POST /api/stores/:id/stock-in
 // Body: { productId, rate, quantity, lowStockAt? }
 export async function POST(req, { params }) {
   const { id } = await params
+  let user
+  try {
+    user = await requireUser()
+  } catch (e) {
+    return NextResponse.json({ error: "You must be signed in to do this" }, { status: 401 })
+ }
+
   try {
     const { productId, rate, quantity, lowStockAt } = await req.json()
 
@@ -13,11 +21,16 @@ export async function POST(req, { params }) {
     if (rate <= 0 || quantity <= 0)
       return NextResponse.json({ error: "Rate and quantity must be greater than 0" }, { status: 400 })
 
-    const store = await prisma.store.findUnique({ where: { id } })
+    const store = await prisma.store.findUnique({
+      where: { id },
+      include: { category: { select: { trackLogs: true } } },
+    })
     if (!store) return NextResponse.json({ error: "Store not found" }, { status: 404 })
 
     const product = await prisma.product.findUnique({ where: { id: productId } })
     if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 })
+
+    const logUserId = store.category.trackLogs ? user.id : null
 
     const result = await prisma.$transaction(async (tx) => {
       // Upsert the stock entry — create or update quantity
@@ -55,6 +68,7 @@ export async function POST(req, { params }) {
           type: "IN",
           quantity,
           rate,
+          userId: logUserId,
         },
       })
 

@@ -10,6 +10,7 @@ datasource db {
 model Category {
   id        String   @id @default(cuid())
   name      String   @unique
+  trackLogs Boolean  @default(false)
   stores    Store[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -77,6 +78,8 @@ model StockLog {
   quantity  Float
   rate      Float    // rate at time of this log entry
   note      String?  // optional note e.g. transfer reference
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
   store     Store    @relation(fields: [storeId], references: [id])
   product   Product  @relation(fields: [productId], references: [id])
   createdAt DateTime @default(now())
@@ -88,9 +91,21 @@ model Transfer {
   targetStoreId String
   productId     String
   quantity      Float
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
   createdAt     DateTime @default(now())
 
   sourceStore Store   @relation("SourceStore", fields: [sourceStoreId], references: [id])
   targetStore Store   @relation("TargetStore", fields: [targetStoreId], references: [id])
   product     Product @relation(fields: [productId], references: [id])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  isAdmin      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  stockLogs    StockLog[]
+  transfers    Transfer[]
 }

@@ -1,8 +1,15 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
+import { requireUser } from "@/lib/auth"
 
 export async function PUT(req, { params }) {
   const { id } = await params
+  try {
+    await requireUser()
+  } catch (e) {
+    return NextResponse.json({ error: "You must be signed in to do this" }, { status: 401 })
+  }
+
   try {
     const body = await req.json()
     const data = {}
@@ -29,6 +36,12 @@ export async function PUT(req, { params }) {
 
 export async function DELETE(req, { params }) {
   const { id } = await params
+  try {
+    await requireUser()
+  } catch (e) {
+    return NextResponse.json({ error: "You must be signed in to do this" }, { status: 401 })
+  }
+
   try {
     await prisma.stockEntry.delete({ where: { id } })
     return NextResponse.json({ success: true })

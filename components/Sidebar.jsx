@@ -45,6 +45,7 @@ export default function Sidebar({ categories, activeStoreId }) {
   }, [categories])
 
   const [showNewCat, setShowNewCat] = useState(false)
+  const [newCatTrackLogs, setNewCatTrackLogs] = useState(false)
   const [showNewStore, setShowNewStore] = useState(null)
   const [editingCatId, setEditingCatId] = useState(null)
   const [editingStoreId, setEditingStoreId] = useState(null)
@@ -67,12 +68,13 @@ export default function Sidebar({ categories, activeStoreId }) {
       const res = await fetch('/api/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newCatName.trim() }),
+        body: JSON.stringify({ name: newCatName.trim(), trackLogs: newCatTrackLogs }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Unable to create category')
 
       setNewCatName('')
+      setNewCatTrackLogs(false)
       setShowNewCat(false)
       await refreshCategories()
       router.refresh()
@@ -121,6 +123,26 @@ export default function Sidebar({ categories, activeStoreId }) {
       router.refresh()
     } catch (error) {
       setActionMessage(error.message || 'Unable to delete category')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function toggleTrackLogs(catId, next) {
+    setLoading(true)
+    setActionMessage('')
+    try {
+      const res = await fetch(`/api/categories/${catId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackLogs: next }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Unable to update tracking')
+      await refreshCategories()
+      router.refresh()
+    } catch (error) {
+      setActionMessage(error.message || 'Unable to update tracking')
     } finally {
       setLoading(false)
     }
@@ -250,6 +272,13 @@ export default function Sidebar({ categories, activeStoreId }) {
                   disabled={loading}
                 >
                   <i className="ti ti-trash" />
+                </button>
+                <button
+                  className={styles.iconAction}
+                  title={cat.trackLogs ? "Tracking is ON — click to turn off" : "Tracking is OFF — click to turn on"}
+                  onClick={() => toggleTrackLogs(cat.id, !cat.trackLogs)}
+                >
+                  <i className={`ti ${cat.trackLogs ? 'ti-eye' : 'ti-eye-off'}`} />
                 </button>
               </div>
             </div>
@@ -402,12 +431,20 @@ export default function Sidebar({ categories, activeStoreId }) {
               onChange={e => setNewCatName(e.target.value)}
               placeholder="Category name…"
             />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, marginTop: 6 }}>
+              <input
+                type="checkbox"
+                checked={newCatTrackLogs}
+                onChange={e => setNewCatTrackLogs(e.target.checked)}
+              />
+              Track who adds/edits/transfers stock in this category
+            </label>
             <div className={styles.inlineActions}>
               <button type="submit" className={styles.inlineSubmit} disabled={loading}>
                 {loading ? '…' : 'Add'}
               </button>
               <button type="button" className={styles.inlineCancel}
-                onClick={() => { setShowNewCat(false); setNewCatName('') }}>
+                onClick={() => { setShowNewCat(false); setNewCatName(''); setNewCatTrackLogs(false) }}>
                 Cancel
               </button>
             </div>
@@ -417,6 +454,19 @@ export default function Sidebar({ categories, activeStoreId }) {
             <i className="ti ti-plus" style={{ fontSize: 14 }} /> New category
           </button>
         )}
+      </div>
+
+      <div style={{ marginTop: 'auto', padding: '12px 16px' }}>
+        <button
+          className={styles.addStoreBtn}
+          onClick={async () => {
+            await fetch('/api/auth/logout', { method: 'POST' })
+            router.push('/login')
+            router.refresh()
+          }}
+        >
+          <i className="ti ti-logout" style={{ fontSize: 13 }} /> Sign out
+        </button>
       </div>
     </aside>
   )
