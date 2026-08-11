@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma"
-import { verifyPassword, createSession } from "@/lib/auth"
+import { verifyPassword, hashPassword, createSession } from "@/lib/auth"
 import { NextResponse } from "next/server"
 
 export async function POST(req) {
@@ -10,8 +10,6 @@ export async function POST(req) {
 
     const userCount = await prisma.user.count()
     if (userCount === 0) {
-      // Bootstrap: first-ever login creates the admin account with these credentials
-      const { hashPassword } = await import("@/lib/auth")
       const admin = await prisma.user.create({
         data: {
           username: username.trim(),

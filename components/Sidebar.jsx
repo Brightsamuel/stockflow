@@ -5,6 +5,7 @@ import styles from './Sidebar.module.css'
 
 export default function Sidebar({ categories, activeStoreId }) {
   const router = useRouter()
+  const [currentUser, setCurrentUser] = useState(null)
   const [categoryList, setCategoryList] = useState(categories)
   const [openCats, setOpenCats] = useState(() => {
     const initial = {}
@@ -34,6 +35,13 @@ export default function Sidebar({ categories, activeStoreId }) {
   }
 
   useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => setCurrentUser(data))
+      .catch(() => setCurrentUser(null))
+  }, [])
+
+  useEffect(() => {
     setCategoryList(categories)
     setOpenCats(prev => {
       const next = {}
@@ -43,6 +51,8 @@ export default function Sidebar({ categories, activeStoreId }) {
       return next
     })
   }, [categories])
+
+  const isAdmin = !!currentUser?.isAdmin
 
   const [showNewCat, setShowNewCat] = useState(false)
   const [newCatTrackLogs, setNewCatTrackLogs] = useState(false)
@@ -233,15 +243,22 @@ export default function Sidebar({ categories, activeStoreId }) {
 
       <div className={styles.nav}>
         <div className={styles.navLabel} style={{ marginTop: 20 }}>Catalogue</div>
+        {currentUser?.isAdmin && (
+          <button className={styles.addStoreBtn} onClick={() => router.push('/users')}>
+            <i className="ti ti-users" style={{ fontSize: 13 }} /> Manage users
+          </button>
+        )}
         <button className={styles.addStoreBtn} onClick={() => router.push('/products')}>
           <i className="ti ti-box" style={{ fontSize: 13 }} /> Manage products
         </button>
         <button className={styles.addStoreBtn} onClick={() => router.push('/search')}>
           <i className="ti ti-history" style={{ fontSize: 13 }} /> Product history
         </button>
+        <button className={styles.addStoreBtn} onClick={() => router.push('/reports')}>
+          <i className="ti ti-report" style={{ fontSize: 13 }} /> Reports
+        </button>
 
         <div className={styles.navLabel}>Categories</div>
-
         {categoryList.map(cat => (
           <div key={cat.id} className={styles.catBlock}>
             <div className={styles.catHeader}>

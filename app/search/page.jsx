@@ -42,6 +42,7 @@ export default function SearchPage() {
       rate: l.rate,
       note: l.note,
       store: l.store.name,
+      user: l.user?.username || null,
       createdAt: l.createdAt,
     }))
     return fromLogs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -136,6 +137,7 @@ export default function SearchPage() {
                     <th>Store</th>
                     <th>Quantity</th>
                     <th>Rate</th>
+                    <th>By</th>
                     <th>Note</th>
                     <th>Date</th>
                   </tr>
@@ -154,12 +156,13 @@ export default function SearchPage() {
                       <td>{entry.store}</td>
                       <td className={styles.mono}>{fmt(entry.quantity)}</td>
                       <td className={styles.mono}>{fmt(entry.rate)}</td>
+                      <td className={styles.fieldHint}>{entry.user || '—'}</td>
                       <td className={styles.fieldHint}>{entry.note || '—'}</td>
                       <td className={styles.mono}>{fmtDate(entry.createdAt)}</td>
                     </tr>
                   ))}
                   {buildTimeline(selected).length === 0 && (
-                    <tr><td colSpan={6} className={styles.fieldHint}>No movement recorded yet.</td></tr>
+                    <tr><td colSpan={7} className={styles.fieldHint}>No movement recorded yet.</td></tr>
                   )}
                 </tbody>
               </table>

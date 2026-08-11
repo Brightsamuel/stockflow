@@ -55,3 +55,15 @@ input, select, textarea { font-family: inherit; }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+@media print {
+  [data-no-print="true"] {
+    display: none !important;
+  }
+  aside {
+    display: none !important;
+  }
+  #report-printable {
+    padding: 0;
+  }
+}

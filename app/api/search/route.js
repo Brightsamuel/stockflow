@@ -25,14 +25,7 @@ export async function GET(req) {
         logs: {
           include: {
             store: { select: { id: true, name: true } },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 50,
-        },
-        transfers: {
-          include: {
-            sourceStore: { select: { id: true, name: true } },
-            targetStore: { select: { id: true, name: true } },
+            user: { select: { id: true, username: true } },
           },
           orderBy: { createdAt: "desc" },
           take: 50,
