@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import styles from '@/dashboard/store.module.css'
 
 function fmt(n) {
@@ -8,6 +8,7 @@ function fmt(n) {
 
 const SCOPE_STORE = 'store'
 const SCOPE_CATEGORY = 'category'
+const SCOPE_EXTERNAL = 'external'
 
 export default function ReportBuilder({ categories }) {
   const [scope, setScope] = useState(SCOPE_STORE)
@@ -18,6 +19,15 @@ export default function ReportBuilder({ categories }) {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [recipients, setRecipients] = useState([])
+  const [recipientFilter, setRecipientFilter] = useState('')
+
+  useEffect(() => {
+  fetch('/api/recipients')
+    .then(res => res.json())
+    .then(data => setRecipients(Array.isArray(data) ? data : []))
+    .catch(() => setRecipients([]))
+  }, [])
 
   const allStores = categories.flatMap(c => c.stores.map(s => ({ ...s, categoryId: c.id, categoryName: c.name })))
 
@@ -31,7 +41,8 @@ export default function ReportBuilder({ categories }) {
     try {
       const params = new URLSearchParams({ from, to })
       if (scope === SCOPE_STORE) params.set('storeId', storeId)
-      else params.set('categoryId', categoryId)
+      else if (scope === SCOPE_CATEGORY) params.set('categoryId', categoryId)
+      else params.set('external', recipientFilter || 'true')
 
       const res = await fetch(`/api/reports?${params}`)
       const data = await res.json()
@@ -72,9 +83,10 @@ export default function ReportBuilder({ categories }) {
           <div className={styles.fieldRow}>
             <div className={styles.field}>
               <label>Report for</label>
-              <select value={scope} onChange={e => { setScope(e.target.value); setStoreId(''); setCategoryId('') }}>
+              <select value={scope} onChange={e => { setScope(e.target.value); setStoreId(''); setCategoryId(''); setRecipientFilter('') }}>
                 <option value={SCOPE_STORE}>A single store</option>
                 <option value={SCOPE_CATEGORY}>A whole category</option>
+                <option value={SCOPE_EXTERNAL}>External recipients</option>
               </select>
             </div>
 
@@ -88,13 +100,23 @@ export default function ReportBuilder({ categories }) {
                   ))}
                 </select>
               </div>
-            ) : (
+            ) : scope === SCOPE_CATEGORY ? (
               <div className={styles.field}>
                 <label>Category</label>
                 <select value={categoryId} onChange={e => setCategoryId(e.target.value)}>
                   <option value="">— select category —</option>
                   {categories.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className={styles.field}>
+                <label>Recipient</label>
+                <select value={recipientFilter} onChange={e => setRecipientFilter(e.target.value)}>
+                  <option value="">All recipients</option>
+                  {recipients.map(r => (
+                    <option key={r.id} value={r.id}>{r.name}{r.company ? ` (${r.company})` : ''}</option>
                   ))}
                 </select>
               </div>
@@ -119,7 +141,50 @@ export default function ReportBuilder({ categories }) {
           </button>
         </form>
 
-        {report && (
+        {report && report.scope === 'external' && (
+          <div id="report-printable">
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ marginBottom: 4 }}>{report.label}</h3>
+              <p className={styles.storeMeta}>{report.from} to {report.to} · Issued to external parties</p>
+            </div>
+
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Recipient</th>
+                    <th>Company</th>
+                    <th>Product</th>
+                    <th>Unit</th>
+                    <th>Qty</th>
+                    <th>From store</th>
+                    <th>Issued by</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.rows.map((r, i) => (
+                    <tr key={i}>
+                      <td className={styles.mono}>{new Date(r.date).toLocaleDateString()}</td>
+                      <td>{r.recipientName}</td>
+                      <td className={styles.fieldHint}>{r.recipientCompany || '—'}</td>
+                      <td className={styles.itemName}>{r.product}</td>
+                      <td className={styles.mono}>{r.unit}</td>
+                      <td className={styles.mono}>{fmt(r.quantity)}</td>
+                      <td>{r.store}</td>
+                      <td className={styles.fieldHint}>{r.issuedBy || '—'}</td>
+                    </tr>
+                  ))}
+                  {report.rows.length === 0 && (
+                    <tr><td colSpan={8} className={styles.fieldHint}>No issues to external parties in this period.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {report && report.scope !== 'external' && (
           <div id="report-printable">
             <div style={{ marginBottom: 16 }}>
               <h3 style={{ marginBottom: 4 }}>{report.label}</h3>

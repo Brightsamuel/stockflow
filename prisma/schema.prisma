@@ -71,33 +71,37 @@ model StockEntry {
 
 // Every movement is written here — immutable audit trail
 model StockLog {
-  id        String   @id @default(cuid())
-  storeId   String
-  productId String
-  type      String   // "IN" | "TRANSFER_IN" | "TRANSFER_OUT"
-  quantity  Float
-  rate      Float    // rate at time of this log entry
-  note      String?  // optional note e.g. transfer reference
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
-  store     Store    @relation(fields: [storeId], references: [id])
-  product   Product  @relation(fields: [productId], references: [id])
-  createdAt DateTime @default(now())
+  id          String     @id @default(cuid())
+  storeId     String
+  productId   String
+  type        String
+  quantity    Float
+  rate        Float
+  note        String?
+  userId      String?
+  recipientId String?
+  store       Store      @relation(fields: [storeId], references: [id])
+  product     Product    @relation(fields: [productId], references: [id])
+  user        User?      @relation(fields: [userId], references: [id])
+  recipient   Recipient? @relation(fields: [recipientId], references: [id])
+  createdAt   DateTime   @default(now())
 }
 
 model Transfer {
-  id            String   @id @default(cuid())
+  id            String     @id @default(cuid())
   sourceStoreId String
-  targetStoreId String
+  targetStoreId String?
+  recipientId   String?
   productId     String
   quantity      Float
   userId        String?
-  user          User?    @relation(fields: [userId], references: [id])
-  createdAt     DateTime @default(now())
+  createdAt     DateTime   @default(now())
 
-  sourceStore Store   @relation("SourceStore", fields: [sourceStoreId], references: [id])
-  targetStore Store   @relation("TargetStore", fields: [targetStoreId], references: [id])
-  product     Product @relation(fields: [productId], references: [id])
+  sourceStore Store      @relation("SourceStore", fields: [sourceStoreId], references: [id])
+  targetStore Store?     @relation("TargetStore", fields: [targetStoreId], references: [id])
+  recipient   Recipient? @relation(fields: [recipientId], references: [id])
+  product     Product    @relation(fields: [productId], references: [id])
+  user        User?      @relation(fields: [userId], references: [id])
 }
 
 model User {
@@ -110,3 +114,13 @@ model User {
   stockLogs    StockLog[]
   transfers    Transfer[]
 }
+
+model Recipient {
+  id        String     @id @default(cuid())
+  name      String
+  company   String?
+  createdAt DateTime   @default(now())
+  transfers Transfer[]
+  logs      StockLog[]
+}
+

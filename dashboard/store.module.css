@@ -415,6 +415,7 @@
   border-radius: var(--radius-lg);
   width: 100%;
   max-width: 420px;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
 }
@@ -425,6 +426,7 @@
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
 }
 
 .modalHeader h3 {
@@ -454,6 +456,21 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 65vh;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.modalBody::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modalBody::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
 }
 
 .modalFooter {
@@ -462,6 +479,7 @@
   justify-content: flex-end;
   padding: 14px 20px;
   border-top: 0.5px solid var(--border);
+  flex-shrink: 0;
 }
 
 .field {

@@ -66,4 +66,13 @@ input, select, textarea { font-family: inherit; }
   #report-printable {
     padding: 0;
   }
+  #report-printable thead {
+    display: table-header-group;
+  }
+  #report-printable tfoot {
+    display: table-footer-group;
+  }
+  #report-printable tr {
+    break-inside: avoid;
+  }
 }

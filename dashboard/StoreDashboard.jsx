@@ -136,33 +136,73 @@ function AddItemRow({ storeId, onDone, onCancel }) {
 }
 
 // ── Stock Out (Transfer) Modal ─────────────────────────────────────────────
+const NEW_RECIPIENT_VALUE = '__new_recipient__'
+
 function StockOutModal({ store, allStores, onClose, onDone }) {
+  const [mode, setMode] = useState('store') // 'store' | 'external'
   const [selectedItemId, setSelectedItemId] = useState('')
   const [targetStoreId, setTargetStoreId] = useState('')
+  const [recipients, setRecipients] = useState([])
+  const [recipientId, setRecipientId] = useState('')
+  const [newRecipientName, setNewRecipientName] = useState('')
+  const [newRecipientCompany, setNewRecipientCompany] = useState('')
   const [quantity, setQuantity] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    fetch('/api/recipients')
+      .then(res => res.json())
+      .then(data => setRecipients(Array.isArray(data) ? data : []))
+      .catch(() => setRecipients([]))
+  }, [])
+
   const selectedItem = store.items.find(i => i.id === selectedItemId)
 
   async function submit() {
-    if (!selectedItemId || !targetStoreId || !quantity) {
-      setError('All fields are required.'); return
+    if (!selectedItemId || !quantity) {
+      setError('Item and quantity are required.'); return
+    }
+    if (mode === 'store' && !targetStoreId) {
+      setError('Select a destination store.'); return
+    }
+    if (mode === 'external' && !recipientId) {
+      setError('Select a recipient, or choose "+ New recipient".'); return
+    }
+    if (mode === 'external' && recipientId === NEW_RECIPIENT_VALUE && !newRecipientName.trim()) {
+      setError('Enter the recipient\'s name.'); return
     }
     if (parseFloat(quantity) > selectedItem?.quantity) {
       setError(`Only ${selectedItem.quantity} ${selectedItem.unit} available.`); return
     }
+
     setLoading(true); setError('')
     try {
-      const res = await apiFetch('/api/transfers', {
+      let finalRecipientId = recipientId
+
+      if (mode === 'external' && recipientId === NEW_RECIPIENT_VALUE) {
+        const rRes = await fetch('/api/recipients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newRecipientName.trim(), company: newRecipientCompany.trim() }),
+        })
+        const rData = await rRes.json()
+        if (!rRes.ok) throw new Error(rData.error || 'Unable to create recipient')
+        finalRecipientId = rData.id
+      }
+
+      const body = {
+        sourceStoreId: store.id,
+        productId: selectedItem.productId,
+        quantity: parseFloat(quantity),
+      }
+      if (mode === 'store') body.targetStoreId = targetStoreId
+      else body.recipientId = finalRecipientId
+
+      const res = await fetch('/api/transfers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sourceStoreId: store.id,
-          targetStoreId,
-          productId: selectedItem.productId,
-          quantity: parseFloat(quantity),
-        }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -177,7 +217,7 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
     <div className={styles.backdrop} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className={styles.modal}>
         <div className={styles.modalHeader}>
-          <h3>Stock out — transfer</h3>
+          <h3>Stock out</h3>
           <button className={styles.closeBtn} onClick={onClose}><i className="ti ti-x" /></button>
         </div>
 
@@ -188,14 +228,50 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
           </div>
 
           <div className={styles.field}>
-            <label>Target store</label>
-            <select value={targetStoreId} onChange={e => setTargetStoreId(e.target.value)}>
-              <option value="">— select destination —</option>
-              {allStores.map(s => (
-                <option key={s.id} value={s.id}>{s.name} ({s.categoryName})</option>
-              ))}
+            <label>Send to</label>
+            <select value={mode} onChange={e => { setMode(e.target.value); setTargetStoreId(''); setRecipientId('') }}>
+              <option value="store">Another store</option>
+              <option value="external">External party</option>
             </select>
           </div>
+
+          {mode === 'store' ? (
+            <div className={styles.field}>
+              <label>Target store</label>
+              <select value={targetStoreId} onChange={e => setTargetStoreId(e.target.value)}>
+                <option value="">— select destination —</option>
+                {allStores.map(s => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.categoryName})</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className={styles.field}>
+              <label>Recipient</label>
+              <select value={recipientId} onChange={e => setRecipientId(e.target.value)}>
+                <option value="">— select recipient —</option>
+                {recipients.map(r => (
+                  <option key={r.id} value={r.id}>{r.name}{r.company ? ` (${r.company})` : ''}</option>
+                ))}
+                <option value={NEW_RECIPIENT_VALUE}>+ New recipient…</option>
+              </select>
+              {recipientId === NEW_RECIPIENT_VALUE && (
+                <div className={styles.fieldRow} style={{ marginTop: 8 }}>
+                  <input
+                    autoFocus
+                    value={newRecipientName}
+                    onChange={e => setNewRecipientName(e.target.value)}
+                    placeholder="Recipient name"
+                  />
+                  <input
+                    value={newRecipientCompany}
+                    onChange={e => setNewRecipientCompany(e.target.value)}
+                    placeholder="Company (optional)"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className={styles.field}>
             <label>Item to transfer</label>
@@ -229,7 +305,10 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
 
           <div className={styles.transferNote}>
             <i className="ti ti-info-circle" />
-            Stock will be reduced from <strong>{store.name}</strong> and added to the destination store.
+            {mode === 'store'
+              ? <>Stock will be reduced from <strong>{store.name}</strong> and added to the destination store.</>
+              : <>Stock will be reduced from <strong>{store.name}</strong> and marked as issued to the recipient. It will no longer be tracked in any store.</>
+            }
           </div>
 
           {error && <p className={styles.errorMsg}>{error}</p>}
@@ -238,7 +317,7 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
         <div className={styles.modalFooter}>
           <button className={styles.btnGhost} onClick={onClose}>Cancel</button>
           <button className={styles.btnPrimary} onClick={submit} disabled={loading}>
-            {loading ? 'Transferring…' : 'Confirm transfer'}
+            {loading ? 'Sending…' : 'Confirm'}
           </button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
-import { buildReport } from "@/lib/reports"
+import { buildReport, buildRecipientReport } from "@/lib/reports"
 
 // GET /api/reports?storeId=X&from=YYYY-MM-DD&to=YYYY-MM-DD
 // GET /api/reports?categoryId=Y&from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -9,6 +9,7 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url)
     const storeId = searchParams.get("storeId")
     const categoryId = searchParams.get("categoryId")
+    const external = searchParams.get("external") // "true" or a specific recipientId
     const fromRaw = searchParams.get("from")
     const toRaw = searchParams.get("to")
 
@@ -23,6 +24,22 @@ export async function GET(req) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 })
     if (from > to)
       return NextResponse.json({ error: "'From' date must be before 'To' date" }, { status: 400 })
+
+    // ── External recipient report ───────────────────────────────────────────
+    if (external) {
+      const recipientId = external === "true" ? null : external
+      let label = "All external recipients"
+      if (recipientId) {
+        const recipient = await prisma.recipient.findUnique({ where: { id: recipientId } })
+        if (!recipient) return NextResponse.json({ error: "Recipient not found" }, { status: 404 })
+        label = recipient.company ? `${recipient.name} (${recipient.company})` : recipient.name
+      }
+      const rows = await buildRecipientReport(recipientId, from, to)
+      return NextResponse.json({ scope: "external", label, from: fromRaw, to: toRaw, rows })
+    }
+
+    if (!storeId && !categoryId)
+      return NextResponse.json({ error: "storeId or categoryId is required" }, { status: 400 })
 
     let storeIds
     let meta
