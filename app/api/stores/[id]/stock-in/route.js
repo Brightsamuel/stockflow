@@ -14,7 +14,7 @@ export async function POST(req, { params }) {
  }
 
   try {
-    const { productId, rate, quantity, lowStockAt } = await req.json()
+    const { productId, rate, quantity, lowStockAt, refNo } = await req.json()
 
     if (!productId || rate == null || quantity == null)
       return NextResponse.json({ error: "productId, rate and quantity are required" }, { status: 400 })
@@ -45,6 +45,8 @@ export async function POST(req, { params }) {
           data: {
             quantity: { increment: quantity },
             rate, // update rate to the latest stock-in rate
+            isDeleted: false,
+            deletedAt: null,
             ...(lowStockAt != null && { lowStockAt }),
           },
         })
@@ -69,6 +71,7 @@ export async function POST(req, { params }) {
           quantity,
           rate,
           userId: logUserId,
+          refNo: refNo?.trim() || null,
         },
       })
 

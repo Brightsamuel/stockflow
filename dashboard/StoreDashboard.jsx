@@ -29,7 +29,7 @@ function AddItemRow({ storeId, onDone, onCancel }) {
   const rowRef = useRef(null)
   const [products, setProducts] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(true)
-  const [form, setForm] = useState({ productId: '', rate: '', quantity: '', lowStockAt: '' })
+  const [form, setForm] = useState({ productId: '', rate: '', quantity: '', lowStockAt: '', refNo: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -60,6 +60,7 @@ function AddItemRow({ storeId, onDone, onCancel }) {
           rate: parseFloat(form.rate),
           quantity: parseFloat(form.quantity),
           lowStockAt: form.lowStockAt ? parseFloat(form.lowStockAt) : 0,
+          refNo: form.refNo.trim() || null,
         }),
       })
       const data = await res.json()
@@ -102,6 +103,14 @@ function AddItemRow({ storeId, onDone, onCancel }) {
             value={form.quantity} onChange={e => set('quantity', e.target.value)}
             className={styles.inlineInputSmall}
           />
+        </td>
+        <td>
+          <input
+            type="text" placeholder="Ref no."
+            value={form.refNo} onChange={e => set('refNo', e.target.value)}
+            className={styles.inlineInputSmall}
+          />
+          <div className={styles.fieldHint} style={{ marginTop: 6 }}>Format suggestion: RCT-1234 (optional)</div>
         </td>
         <td>
           <input
@@ -401,12 +410,22 @@ function EditItemModal({ item, onClose, onDone }) {
 }
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────
-export default function StoreDashboard({ store, allStores, transfers }) {
+export default function StoreDashboard({ store, allStores, transfers, currentUser }) {
   const router = useRouter()
   const [tab, setTab] = useState('inventory')
-  const [modal, setModal] = useState(null) // 'out' | {edit: item}
+  const [modal, setModal] = useState(null)
   const [addingItem, setAddingItem] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+
+  const canDelete = currentUser?.role === 'SUPER_ADMIN'
+
+  async function restoreItem(id) {
+    await fetch(`/api/items/${id}/restore`, {
+      method: 'POST',
+    })
+
+    router.refresh()
+  }
 
   function refresh() {
     setModal(null)
@@ -545,12 +564,49 @@ export default function StoreDashboard({ store, allStores, transfers }) {
                         </td>
                       </tr>
                     ))}
+                    {canDelete && store.deletedItems?.length > 0 && (
+                      <div style={{ marginTop: 32 }}>
+                        <h3 style={{ marginBottom: 12 }}>Deleted items</h3>
+                        <div className={styles.tableWrap}>
+                          <table className={styles.table}>
+                            <thead>
+                              <tr><th>Item</th><th>Unit</th><th>Qty (at deletion)</th><th>Deleted</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                              {store.deletedItems.map(entry => (
+                                <tr key={entry.id}>
+                                  <td>{entry.product.name}</td>
+                                  <td className={styles.mono}>{entry.product.unit.name}</td>
+                                  <td className={styles.mono}>{fmt(entry.quantity)}</td>
+                                  <td className={styles.fieldHint}>{timeAgo(entry.deletedAt)}</td>
+                                  <td>
+                                    <button className={styles.btnGhost} onClick={() => restoreItem(entry.id)}>
+                                      Restore
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                     {addingItem && (
                       <AddItemRow
                         storeId={store.id}
                         onDone={() => { setAddingItem(false); router.refresh() }}
                         onCancel={() => setAddingItem(false)}
                       />
+                    )}
+                    {canDelete && (
+                      <button
+                        className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                        title="Delete"
+                        onClick={() => deleteItem(item.id)}
+                        disabled={deletingId === item.id}
+                      >
+                        <i className="ti ti-trash" />
+                      </button>
                     )}
                   </tbody>
                 </table>

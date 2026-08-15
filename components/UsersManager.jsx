@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from '@/dashboard/store.module.css'
 
+const isAtLeastAdmin = currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SUPER_ADMIN')
+
 export default function UsersManager({ initialUsers, currentUserId }) {
   const router = useRouter()
   const [users, setUsers] = useState(initialUsers)
@@ -48,6 +50,21 @@ export default function UsersManager({ initialUsers, currentUserId }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: next }),
       })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      await refresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function deleteUser(userId) {
+    if (!confirm('Permanently delete this user? This cannot be undone.')) return
+    setLoading(true); setError('')
+    try {
+      const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       await refresh()
@@ -105,11 +122,16 @@ export default function UsersManager({ initialUsers, currentUserId }) {
                   </td>
                   <td className={styles.mono}>{u.isAdmin ? 'Admin' : 'Standard'}</td>
                   <td>
-                    {u.isActive ? (
+                    {currentUserRole === 'SUPER_ADMIN' && u.id !== currentUserId && (
+                      <button className={`${styles.btnGhost} ${styles.iconBtnDanger}`} onClick={() => deleteUser(u.id)} disabled={loading}>
+                        Delete
+                      </button>
+                    )}
+                    {/* {u.isActive ? (
                       <span className={styles.badgeOk}>Active</span>
                     ) : (
                       <span className={styles.badgeLow}>Deactivated</span>
-                    )}
+                    )} */}
                   </td>
                   <td>
                     <button

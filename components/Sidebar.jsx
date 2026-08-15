@@ -248,6 +248,11 @@ export default function Sidebar({ categories, activeStoreId }) {
             <i className="ti ti-users" style={{ fontSize: 13 }} /> Manage users
           </button>
         )}
+        {currentUser?.isAdmin && (
+          <button className={styles.addStoreBtn} onClick={() => router.push('/settings')}>
+            <i className="ti ti-settings" style={{ fontSize: 13 }} /> Settings
+          </button>
+        )}
         <button className={styles.addStoreBtn} onClick={() => router.push('/products')}>
           <i className="ti ti-box" style={{ fontSize: 13 }} /> Manage products
         </button>

@@ -25,6 +25,13 @@ export async function GET(req) {
     if (from > to)
       return NextResponse.json({ error: "'From' date must be before 'To' date" }, { status: 400 })
 
+    const refNo = searchParams.get("refNo")
+
+    if (refNo) {
+      const rows = await buildRefReport(refNo)
+      return NextResponse.json({ scope: "ref", label: `Ref No. ${refNo}`, refNo, rows })
+    }
+
     // ── External recipient report ───────────────────────────────────────────
     if (external) {
       const recipientId = external === "true" ? null : external

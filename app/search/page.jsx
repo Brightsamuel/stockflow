@@ -148,7 +148,9 @@ export default function SearchPage() {
                       <td>
                         <span className={
                           entry.kind === 'IN' ? styles.badgeOk :
-                          entry.kind === 'TRANSFER_OUT' ? styles.badgeLow : styles.badgeOk
+                          entry.kind === 'TRANSFER_OUT' ? styles.badgeLow :
+                          entry.kind === 'EDIT' ? styles.badgeEdit :
+                          entry.kind === 'DELETE' ? styles.badgeDelete : styles.badgeOk
                         }>
                           {entry.kind.replace('_', ' ')}
                         </span>

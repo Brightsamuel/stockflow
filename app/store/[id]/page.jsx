@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/prisma'
+import { requireUser } from '@/lib/auth'
 import Sidebar from '@/components/Sidebar'
 import StoreDashboard from '@/dashboard/StoreDashboard'
 import styles from '@/dashboard/store.module.css'
@@ -7,12 +8,15 @@ import styles from '@/dashboard/store.module.css'
 export default async function StorePage({ params }) {
   const { id } = await params
 
+  const currentUser = await requireUser()
+
   const [store, categories, transfers, logs] = await Promise.all([
     prisma.store.findUnique({
       where: { id },
       include: {
         category: { select: { id: true, name: true } },
         entries: {
+          where: { isDeleted: false },
           include: {
             product: { include: { unit: true } },
           },
@@ -81,14 +85,22 @@ export default async function StorePage({ params }) {
     cat.stores.map(s => ({ ...s, categoryName: cat.name }))
   ).filter(s => s.id !== id)
 
+  const deletedItems = await prisma.stockEntry.findMany({
+    where: { storeId: id, isDeleted: true },
+    include: { product: { include: { unit: true } } },
+    orderBy: { deletedAt: 'desc' },
+  })
+
   return (
     <div className={styles.shell}>
       <Sidebar categories={categories} activeStoreId={id} />
       <div className={styles.main}>
         <StoreDashboard
-          store={{ ...store, items }}
+          store={{ ...store, items, deletedItems }}
           allStores={allStores}
           transfers={transfers}
+          // deletedItems={deletedItems}
+          currentUser={currentUser}  // TODO: pass current user from session
         />
       </div>
     </div>
