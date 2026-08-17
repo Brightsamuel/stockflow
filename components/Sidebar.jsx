@@ -52,7 +52,7 @@ export default function Sidebar({ categories, activeStoreId }) {
     })
   }, [categories])
 
-  const isAdmin = !!currentUser?.isAdmin
+  const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN'
 
   const [showNewCat, setShowNewCat] = useState(false)
   const [newCatTrackLogs, setNewCatTrackLogs] = useState(false)
@@ -243,12 +243,12 @@ export default function Sidebar({ categories, activeStoreId }) {
 
       <div className={styles.nav}>
         <div className={styles.navLabel} style={{ marginTop: 20 }}>Catalogue</div>
-        {currentUser?.isAdmin && (
+        {isAdmin && (
           <button className={styles.addStoreBtn} onClick={() => router.push('/users')}>
             <i className="ti ti-users" style={{ fontSize: 13 }} /> Manage users
           </button>
         )}
-        {currentUser?.isAdmin && (
+        {isAdmin && (
           <button className={styles.addStoreBtn} onClick={() => router.push('/settings')}>
             <i className="ti ti-settings" style={{ fontSize: 13 }} /> Settings
           </button>

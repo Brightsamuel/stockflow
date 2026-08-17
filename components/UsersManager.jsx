@@ -1,18 +1,26 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from '@/dashboard/store.module.css'
 
-const isAtLeastAdmin = currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SUPER_ADMIN')
-
-export default function UsersManager({ initialUsers, currentUserId }) {
+export default function UsersManager({ initialUsers, currentUserId, currentUserRole }) {
   const router = useRouter()
   const [users, setUsers] = useState(initialUsers)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [role, setRole] = useState('STANDARD')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const allowedRoles = currentUserRole === 'SUPER_ADMIN'
+    ? ['STANDARD', 'ADMIN', 'SUPER_ADMIN']
+    : ['STANDARD', 'ADMIN']
+
+  useEffect(() => {
+    if (!allowedRoles.includes(role)) {
+      setRole(allowedRoles[0])
+    }
+  }, [allowedRoles, role])
 
   async function refresh() {
     const res = await fetch('/api/users')
@@ -29,11 +37,11 @@ export default function UsersManager({ initialUsers, currentUserId }) {
       const res = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password, isAdmin }),
+        body: JSON.stringify({ username: username.trim(), password, role }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setUsername(''); setPassword(''); setIsAdmin(false)
+      setUsername(''); setPassword(''); setRole('STANDARD')
       await refresh()
     } catch (err) {
       setError(err.message)
@@ -92,10 +100,14 @@ export default function UsersManager({ initialUsers, currentUserId }) {
           <label style={{ marginTop: 12 }}>Password</label>
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} />
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, marginTop: 12 }}>
-            <input type="checkbox" checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} />
-            Grant admin access
-          </label>
+          <label style={{ marginTop: 12 }}>Role</label>
+          <select value={role} onChange={e => setRole(e.target.value)}>
+            {allowedRoles.map(option => (
+              <option key={option} value={option}>
+                {option === 'STANDARD' ? 'Standard' : option === 'ADMIN' ? 'Admin' : 'Super Admin'}
+              </option>
+            ))}
+          </select>
 
           {error && <p className={styles.errorMsg}>{error}</p>}
 
@@ -120,27 +132,33 @@ export default function UsersManager({ initialUsers, currentUserId }) {
                   <td className={styles.itemName}>
                     {u.username} {u.id === currentUserId && <span className={styles.fieldHint}>(you)</span>}
                   </td>
-                  <td className={styles.mono}>{u.isAdmin ? 'Admin' : 'Standard'}</td>
+                  <td className={styles.mono}>{u.role}</td>
                   <td>
-                    {currentUserRole === 'SUPER_ADMIN' && u.id !== currentUserId && (
-                      <button className={`${styles.btnGhost} ${styles.iconBtnDanger}`} onClick={() => deleteUser(u.id)} disabled={loading}>
-                        Delete
-                      </button>
-                    )}
-                    {/* {u.isActive ? (
+                    {u.isActive ? (
                       <span className={styles.badgeOk}>Active</span>
                     ) : (
                       <span className={styles.badgeLow}>Deactivated</span>
-                    )} */}
+                    )}
                   </td>
                   <td>
-                    <button
-                      className={styles.btnGhost}
-                      onClick={() => toggleActive(u.id, !u.isActive)}
-                      disabled={loading || u.id === currentUserId}
-                    >
-                      {u.isActive ? 'Deactivate' : 'Reactivate'}
-                    </button>
+                    <div className={styles.rowActions}>
+                      <button
+                        className={styles.btnGhost}
+                        onClick={() => toggleActive(u.id, !u.isActive)}
+                        disabled={loading || u.id === currentUserId}
+                      >
+                        {u.isActive ? 'Deactivate' : 'Reactivate'}
+                      </button>
+                      {currentUserRole === 'SUPER_ADMIN' && u.id !== currentUserId && (
+                        <button
+                          className={`${styles.btnGhost} ${styles.iconBtnDanger}`}
+                          onClick={() => deleteUser(u.id)}
+                          disabled={loading}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

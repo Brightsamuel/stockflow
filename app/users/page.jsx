@@ -8,11 +8,11 @@ import styles from '@/dashboard/store.module.css'
 export default async function UsersPage() {
   const currentUser = await getCurrentUser()
   if (!currentUser) redirect('/login')
-  if (!currentUser.isAdmin) redirect('/')
+  if (currentUser.role !== 'ADMIN' && currentUser.role !== 'SUPER_ADMIN') redirect('/')
 
   const [users, categories] = await Promise.all([
     prisma.user.findMany({
-      select: { id: true, username: true, isAdmin: true, isActive: true, createdAt: true },
+      select: { id: true, username: true, role: true, isActive: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     }),
     prisma.category.findMany({
@@ -30,7 +30,7 @@ export default async function UsersPage() {
     <div className={styles.shell}>
       <Sidebar categories={categories} activeStoreId={null} />
       <div className={styles.main}>
-        <UsersManager initialUsers={users} currentUserId={currentUser.id} />
+        <UsersManager initialUsers={users} currentUserId={currentUser.id} currentUserRole={currentUser.role} />
       </div>
     </div>
   )

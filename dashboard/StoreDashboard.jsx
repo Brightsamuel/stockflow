@@ -552,14 +552,18 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                             >
                               <i className="ti ti-edit" />
                             </button>
-                            <button
-                              className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-                              title="Delete"
-                              onClick={() => deleteItem(item.id)}
-                              disabled={deletingId === item.id}
-                            >
-                              <i className="ti ti-trash" />
-                            </button>
+                            
+                            {/* Delete — SUPER_ADMIN only */}
+                            {canDelete && (
+                              <button
+                                className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                                title="Delete"
+                                onClick={() => deleteItem(item.id)}
+                                disabled={deletingId === item.id}
+                              >
+                                <i className="ti ti-trash" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -597,16 +601,6 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                         onDone={() => { setAddingItem(false); router.refresh() }}
                         onCancel={() => setAddingItem(false)}
                       />
-                    )}
-                    {canDelete && (
-                      <button
-                        className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-                        title="Delete"
-                        onClick={() => deleteItem(item.id)}
-                        disabled={deletingId === item.id}
-                      >
-                        <i className="ti ti-trash" />
-                      </button>
                     )}
                   </tbody>
                 </table>

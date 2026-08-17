@@ -401,7 +401,7 @@ export default function ReportBuilder({ categories }) {
           </div>
         )}
 
-        {report && report.scope !== 'external' && (
+        {report && report.scope !== 'external' && report.scope !== 'ref' && (
           <div id="report-printable">
             <div style={{ marginBottom: 16 }}>
               {settings?.companyName && (

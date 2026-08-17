@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
-import { buildReport, buildRecipientReport } from "@/lib/reports"
+import { buildReport, buildRecipientReport, buildRefReport } from "@/lib/reports"
 
 // GET /api/reports?storeId=X&from=YYYY-MM-DD&to=YYYY-MM-DD
 // GET /api/reports?categoryId=Y&from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -9,14 +9,19 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url)
     const storeId = searchParams.get("storeId")
     const categoryId = searchParams.get("categoryId")
-    const external = searchParams.get("external") // "true" or a specific recipientId
+    const external = searchParams.get("external")
+    const refNo = searchParams.get("refNo")
     const fromRaw = searchParams.get("from")
     const toRaw = searchParams.get("to")
 
+    // ── Ref No. lookup — no date range required ─────────────────────────────
+    if (refNo) {
+      const rows = await buildRefReport(refNo)
+      return NextResponse.json({ scope: "ref", label: `Ref No. ${refNo}`, refNo, rows })
+    }
+
     if (!fromRaw || !toRaw)
       return NextResponse.json({ error: "from and to dates are required" }, { status: 400 })
-    if (!storeId && !categoryId)
-      return NextResponse.json({ error: "storeId or categoryId is required" }, { status: 400 })
 
     const from = new Date(fromRaw + "T00:00:00.000Z")
     const to = new Date(toRaw + "T23:59:59.999Z")
@@ -24,13 +29,6 @@ export async function GET(req) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 })
     if (from > to)
       return NextResponse.json({ error: "'From' date must be before 'To' date" }, { status: 400 })
-
-    const refNo = searchParams.get("refNo")
-
-    if (refNo) {
-      const rows = await buildRefReport(refNo)
-      return NextResponse.json({ scope: "ref", label: `Ref No. ${refNo}`, refNo, rows })
-    }
 
     // ── External recipient report ───────────────────────────────────────────
     if (external) {
@@ -71,12 +69,7 @@ export async function GET(req) {
 
     const rows = await buildReport(storeIds, from, to)
 
-    return NextResponse.json({
-      ...meta,
-      from: fromRaw,
-      to: toRaw,
-      rows,
-    })
+    return NextResponse.json({ ...meta, from: fromRaw, to: toRaw, rows })
   } catch (e) {
     console.error(e)
     return NextResponse.json({ error: "Failed to build report" }, { status: 500 })

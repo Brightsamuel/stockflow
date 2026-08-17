@@ -1,6 +1,7 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
-import { requireUser } from '@/lib/auth'
+// import { requireUser } from '@/lib/auth'
+import { getCurrentUser } from '@/lib/auth'
 import Sidebar from '@/components/Sidebar'
 import StoreDashboard from '@/dashboard/StoreDashboard'
 import styles from '@/dashboard/store.module.css'
@@ -8,7 +9,12 @@ import styles from '@/dashboard/store.module.css'
 export default async function StorePage({ params }) {
   const { id } = await params
 
-  const currentUser = await requireUser()
+  // const currentUser = await requireUser()
+  const currentUser = await getCurrentUser()
+
+  if (!currentUser) {
+    redirect('/login')
+  }
 
   const [store, categories, transfers, logs] = await Promise.all([
     prisma.store.findUnique({
