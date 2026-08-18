@@ -44,8 +44,10 @@ export default async function StorePage({ params }) {
         OR: [{ sourceStoreId: id }, { targetStoreId: id }],
       },
       include: {
+        product: { include: { unit: true } },
         sourceStore: { select: { id: true, name: true, category: { select: { name: true } } } },
         targetStore: { select: { id: true, name: true, category: { select: { name: true } } } },
+        recipient: { select: { id: true, name: true, company: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 50,

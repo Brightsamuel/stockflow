@@ -63,10 +63,8 @@ input, select, textarea { font-family: inherit; }
   aside {
     display: none !important;
   }
-  .main {
+  .store-module__lV2UyW__main {
     margin-left: 0 !important;
-    padding-left: 0 !important;
-    width: 100% !important;
   }
   #report-printable {
     padding: 0;

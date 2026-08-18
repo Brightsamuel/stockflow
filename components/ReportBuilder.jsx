@@ -112,9 +112,9 @@ export default function ReportBuilder({ categories }) {
         toText = toText || max.toLocaleDateString()
       }
     }
-    const rangeText = (fromText || '') + (toText ? ` to ${toText}` : '')
+    const rangeText = report.scope === 'ref' ? '' : (fromText || '') + (toText ? ` to ${toText}` : '')
     if (rangeText) doc.text(rangeText, 14, y)
-    doc.setTextColor(0)
+    doc.setTextColor(0) //doc color
     y += 6
 
     const numericStyle = { halign: 'right' }
@@ -138,6 +138,25 @@ export default function ReportBuilder({ categories }) {
         headStyles: { fillColor: [40, 40, 40], textColor: 255, halign: 'left' },
         columnStyles: { 5: numericStyle },
       })
+    } else if (report.scope === 'ref') {
+      autoTable(doc, {
+        startY: y,
+        head: [['Product', 'Unit', 'Type', 'Qty', 'Rate', 'Store', 'Added by', 'Date']],
+        body: report.rows.map(r => [
+          r.product,
+          r.unit,
+          r.type,
+          fmt(r.quantity),
+          fmt(r.rate),
+          r.store,
+          r.addedBy || '—',
+          new Date(r.date).toLocaleString(),
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
+        headStyles: { fillColor: [40, 40, 40], textColor: 255, halign: 'left' },
+        columnStyles: { 3: numericStyle, 4: numericStyle },
+    })
     } else {
       const head = report.scope === 'category'
         ? [['Store', 'Product', 'Unit', 'Opening', 'Added', 'Deducted', 'Closing']]
@@ -175,6 +194,52 @@ export default function ReportBuilder({ categories }) {
     doc.save(filename)
   }
 
+  async function exportExcel() {
+    const XLSX = await import('xlsx')
+
+    let headerRows = []
+    if (settings?.companyName) {
+      headerRows.push([settings.companyName])
+      if (settings.address) headerRows.push([settings.address])
+      const contact = [settings.phone, settings.email].filter(Boolean).join(' · ')
+      if (contact) headerRows.push([contact])
+      headerRows.push([])
+    }
+    headerRows.push([report.label])
+    if (report.scope !== 'ref') headerRows.push([`${report.from} to ${report.to}`])
+    headerRows.push([])
+
+    let cols, rows
+    if (report.scope === 'external') {
+      cols = ['Date', 'Recipient', 'Company', 'Product', 'Unit', 'Qty', 'From store', 'Issued by']
+      rows = report.rows.map(r => [
+        new Date(r.date).toLocaleDateString(), r.recipientName, r.recipientCompany || '',
+        r.product, r.unit, r.quantity, r.store, r.issuedBy || '',
+      ])
+    } else if (report.scope === 'ref') {
+      cols = ['Product', 'Unit', 'Type', 'Qty', 'Rate', 'Store', 'Added by', 'Date']
+      rows = report.rows.map(r => [
+        r.product, r.unit, r.type, r.quantity, r.rate, r.store, r.addedBy || '', new Date(r.date).toLocaleString(),
+      ])
+    } else {
+      cols = report.scope === 'category'
+        ? ['Store', 'Product', 'Unit', 'Opening', 'Added', 'Deducted', 'Closing']
+        : ['Product', 'Unit', 'Opening', 'Added', 'Deducted', 'Closing']
+      rows = report.rows.map(r => {
+        const row = report.scope === 'category' ? [r.storeName] : []
+        return [...row, r.productName, r.unit, r.opening, r.added, r.deducted, r.closing]
+      })
+    }
+
+    const sheetData = [...headerRows, cols, ...rows]
+    const ws = XLSX.utils.aoa_to_sheet(sheetData)
+    ws['!cols'] = cols.map(() => ({ wch: 16 }))
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Report')
+    XLSX.writeFile(wb, `report-${report.from || report.refNo}-${report.to || ''}.xlsx`)
+  }
+
   return (
     <>
       <div className={styles.topbar} data-no-print="true">
@@ -189,6 +254,9 @@ export default function ReportBuilder({ categories }) {
             </button>
             <button className={styles.btnGhost} onClick={exportPdf}>
               <i className="ti ti-file-type-pdf" /> Export PDF
+            </button>
+            <button className={styles.btnGhost} onClick={exportExcel}>
+              <i className="ti ti-file-spreadsheet" /> Export Excel
             </button>
           </div>
         )}

@@ -9,7 +9,7 @@ import styles from '@/dashboard/store.module.css'
 export default async function SettingsPage() {
   const currentUser = await getCurrentUser()
   if (!currentUser) redirect('/login')
-  if (!currentUser.isAdmin) redirect('/')
+  if (currentUser.role !== 'ADMIN' && currentUser.role !== 'SUPER_ADMIN') redirect('/')
 
   const [settings, categories] = await Promise.all([
     prisma.settings.findUnique({ where: { id: 'singleton' } }),

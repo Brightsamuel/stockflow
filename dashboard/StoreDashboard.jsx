@@ -620,6 +620,12 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
             ) : (
               transfers.map(t => {
                 const isOut = t.sourceStoreId === store.id
+                const destinationLabel = t.targetStore
+                ? t.targetStore.name
+                : t.recipient
+                  ? `${t.recipient.name}${t.recipient.company ? ` (${t.recipient.company})` : ''}`
+                  : 'Unknown'
+                const destinationCat = t.targetStore ? t.targetStore.category.name : 'External'
                 return (
                   <div key={t.id} className={styles.transferRow}>
                     <div className={`${styles.transferDir} ${isOut ? styles.dirOut : styles.dirIn}`}>
@@ -628,12 +634,12 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                     <div className={styles.transferStores}>
                       <span className={styles.pill}>{t.sourceStore.name}</span>
                       <i className="ti ti-arrow-right" style={{ color: 'var(--text-muted)', fontSize: 13 }} />
-                      <span className={styles.pill}>{t.targetStore.name}</span>
+                      <span className={styles.pill}>{destinationLabel}</span>
                       <span className={styles.transferCat}>
-                        {t.sourceStore.category.name} → {t.targetStore.category.name}
+                        {t.sourceStore.category.name} → {destinationCat}
                       </span>
                     </div>
-                    <div className={styles.transferItem}>{t.itemName} · {t.unit}</div>
+                    <div className={styles.transferItem}>{t.product.name} · {t.product.unit.name}</div>
                     <div className={styles.transferQty}>{fmt(t.quantity)} units</div>
                     <div className={styles.transferTime}>{timeAgo(t.createdAt)}</div>
                   </div>
