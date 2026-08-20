@@ -440,6 +440,17 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
     router.refresh()
   }
 
+  async function permanentlyDeleteItem(id) {
+    if (!confirm('Permanently delete this item? This cannot be undone and history for it will be lost.')) return
+    const res = await apiFetch(`/api/items/${id}/permanent`, { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      alert(data.error || 'Failed to permanently delete item.')
+      return
+    }
+    router.refresh()
+  }
+
   // Metrics
   const totalItems = store.items.length
   const totalQty = store.items.reduce((s, i) => s + i.quantity, 0)
@@ -476,6 +487,14 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
           Transfer log
           {transfers.length > 0 && <span className={styles.tabBadge}>{transfers.length}</span>}
         </button>
+        <div className={styles.tabs}>
+        {canDelete && (
+          <button className={`${styles.tab} ${tab === 'deleted' ? styles.tabActive : ''}`} onClick={() => setTab('deleted')}>
+            Deleted items
+            {store.deletedItems?.length > 0 && <span className={styles.tabBadge}>{store.deletedItems.length}</span>}
+          </button>
+        )}
+        </div>
       </div>
 
       <div className={styles.content}>
@@ -568,33 +587,6 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                         </td>
                       </tr>
                     ))}
-                    {canDelete && store.deletedItems?.length > 0 && (
-                      <div style={{ marginTop: 32 }}>
-                        <h3 style={{ marginBottom: 12 }}>Deleted items</h3>
-                        <div className={styles.tableWrap}>
-                          <table className={styles.table}>
-                            <thead>
-                              <tr><th>Item</th><th>Unit</th><th>Qty (at deletion)</th><th>Deleted</th><th></th></tr>
-                            </thead>
-                            <tbody>
-                              {store.deletedItems.map(entry => (
-                                <tr key={entry.id}>
-                                  <td>{entry.product.name}</td>
-                                  <td className={styles.mono}>{entry.product.unit.name}</td>
-                                  <td className={styles.mono}>{fmt(entry.quantity)}</td>
-                                  <td className={styles.fieldHint}>{timeAgo(entry.deletedAt)}</td>
-                                  <td>
-                                    <button className={styles.btnGhost} onClick={() => restoreItem(entry.id)}>
-                                      Restore
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
                     {addingItem && (
                       <AddItemRow
                         storeId={store.id}
@@ -646,6 +638,49 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                 )
               })
             )}
+          </div>
+        )}
+
+        {/* ── Deleted items tab ── */}
+        {tab === 'deleted' && canDelete && (
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Unit</th>
+                  <th>Qty (at deletion)</th>
+                  <th>Deleted</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {store.deletedItems?.map(entry => (
+                  <tr key={entry.id}>
+                    <td className={styles.itemName}>{entry.product.name}</td>
+                    <td className={styles.mono}>{entry.product.unit.name}</td>
+                    <td className={styles.mono}>{fmt(entry.quantity)}</td>
+                    <td className={styles.fieldHint}>{timeAgo(entry.deletedAt)}</td>
+                    <td>
+                      <div className={styles.rowActions}>
+                        <button className={styles.btnGhost} onClick={() => restoreItem(entry.id)}>
+                          Restore
+                        </button>
+                        <button
+                          className={`${styles.btnGhost} ${styles.iconBtnDanger}`}
+                          onClick={() => permanentlyDeleteItem(entry.id)}
+                        >
+                          Delete permanently
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {(!store.deletedItems || store.deletedItems.length === 0) && (
+                  <tr><td colSpan={5} className={styles.fieldHint}>No deleted items.</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

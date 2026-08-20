@@ -55,7 +55,7 @@ export default function Sidebar({ categories, activeStoreId }) {
   const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN'
 
   const [showNewCat, setShowNewCat] = useState(false)
-  const [newCatTrackLogs, setNewCatTrackLogs] = useState(false)
+  // const [newCatTrackLogs, setNewCatTrackLogs] = useState(false)
   const [showNewStore, setShowNewStore] = useState(null)
   const [editingCatId, setEditingCatId] = useState(null)
   const [editingStoreId, setEditingStoreId] = useState(null)
@@ -75,11 +75,11 @@ export default function Sidebar({ categories, activeStoreId }) {
     setActionMessage('')
 
     try {
-      const res = await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newCatName.trim(), trackLogs: newCatTrackLogs }),
-      })
+      // const res = await fetch('/api/categories', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ name: newCatName.trim(), trackLogs: newCatTrackLogs }),
+      // })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Unable to create category')
 
@@ -453,14 +453,14 @@ export default function Sidebar({ categories, activeStoreId }) {
               onChange={e => setNewCatName(e.target.value)}
               placeholder="Category name…"
             />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, marginTop: 6 }}>
+            {/* <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, marginTop: 6 }}>
               <input
                 type="checkbox"
                 checked={newCatTrackLogs}
                 onChange={e => setNewCatTrackLogs(e.target.checked)}
               />
               Track who adds/edits/transfers stock in this category
-            </label>
+            </label> */}
             <div className={styles.inlineActions}>
               <button type="submit" className={styles.inlineSubmit} disabled={loading}>
                 {loading ? '…' : 'Add'}

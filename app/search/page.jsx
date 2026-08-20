@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from '@/dashboard/store.module.css'
 
@@ -19,6 +19,11 @@ export default function SearchPage() {
   const [results, setResults] = useState([])
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/auth/me').then(res => res.json()).then(setCurrentUser).catch(() => {})
+  }, [])
 
   async function runSearch(e) {
     e.preventDefault()
@@ -32,6 +37,23 @@ export default function SearchPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function clearHistory() {
+    const confirmText = `This will PERMANENTLY delete all ${buildTimeline(selected).length} history entries for "${selected.name}" across every store. Current stock balances are not affected, but this product's opening balance in future reports will reset to zero from this point forward. This cannot be undone.\n\nType the product name to confirm: `
+    const typed = prompt(confirmText)
+    if (typed !== selected.name) {
+      if (typed !== null) alert('Name did not match — nothing was cleared.')
+      return
+    }
+
+    const res = await fetch(`/api/products/${selected.id}/logs`, { method: 'DELETE' })
+    const data = await res.json()
+    if (!res.ok) { alert(data.error); return }
+    alert(`Cleared ${data.deletedCount} history entries.`)
+    setSelected(null)
+    setResults([])
+    setQ('')
   }
 
   // Merge logs + transfers into one chronological movement feed
@@ -108,9 +130,16 @@ export default function SearchPage() {
 
         {selected && (
           <>
-            <button className={styles.btnGhost} onClick={() => setSelected(null)} style={{ marginBottom: 16 }}>
-              <i className="ti ti-arrow-left" /> Back to results
-            </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+              <button className={styles.btnGhost} onClick={() => setSelected(null)}>
+                <i className="ti ti-arrow-left" /> Back to results
+              </button>
+              {currentUser?.role === 'SUPER_ADMIN' && (
+                <button className={`${styles.btnGhost} ${styles.iconBtnDanger}`} onClick={clearHistory}>
+                  <i className="ti ti-trash" /> Clear history
+                </button>
+              )}
+            </div>
 
             <h3 style={{ marginBottom: 4 }}>{selected.name}</h3>
             <p className={styles.storeMeta} style={{ marginBottom: 16 }}>

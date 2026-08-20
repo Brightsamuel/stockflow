@@ -25,7 +25,7 @@ export async function POST(req, { params }) {
       where: { id },
       include: { category: { select: { trackLogs: true } } },
     })
-    if (!store) return NextResponse.json({ error: "Store not found" }, { status: 404 })
+    if (!store)  return NextResponse.json({ error: "Store not found" }, { status: 404 })
 
     const product = await prisma.product.findUnique({ where: { id: productId } })
     if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 })
@@ -33,46 +33,33 @@ export async function POST(req, { params }) {
     const logUserId = store.category.trackLogs ? user.id : null
 
     const result = await prisma.$transaction(async (tx) => {
-      // Upsert the stock entry — create or update quantity
       const existing = await tx.stockEntry.findUnique({
         where: { productId_storeId: { productId, storeId: id } },
       })
 
       let entry
-      if (existing) {
+      if (existing?.isDeleted) {
+        await tx.stockEntry.delete({ where: { id: existing.id } })
+        entry = await tx.stockEntry.create({
+          data: { productId, storeId: id, rate, quantity, lowStockAt: lowStockAt ?? 0 },
+        })
+      } else if (existing) {
         entry = await tx.stockEntry.update({
           where: { id: existing.id },
           data: {
             quantity: { increment: quantity },
-            rate, // update rate to the latest stock-in rate
-            isDeleted: false,
-            deletedAt: null,
+            rate,
             ...(lowStockAt != null && { lowStockAt }),
           },
         })
       } else {
         entry = await tx.stockEntry.create({
-          data: {
-            productId,
-            storeId: id,
-            rate,
-            quantity,
-            lowStockAt: lowStockAt ?? 0,
-          },
+          data: { productId, storeId: id, rate, quantity, lowStockAt: lowStockAt ?? 0 },
         })
       }
 
-      // Write to stock log
       await tx.stockLog.create({
-        data: {
-          storeId: id,
-          productId,
-          type: "IN",
-          quantity,
-          rate,
-          userId: logUserId,
-          refNo: refNo?.trim() || null,
-        },
+        data: { storeId: id, productId, type: "IN", quantity, rate, userId: logUserId, refNo: refNo?.trim() || null },
       })
 
       return entry
