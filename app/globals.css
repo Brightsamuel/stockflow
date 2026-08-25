@@ -1,28 +1,28 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg:            #0f1117;
-  --surface-1:     #161b25;
-  --surface-2:     #1c2333;
-  --surface-3:     #232b3e;
-  --border:        rgba(255,255,255,0.07);
-  --border-strong: rgba(255,255,255,0.13);
+  --bg:            #f7f8fa;
+  --surface-1:     #ffffff;
+  --surface-2:     #ffffff;
+  --surface-3:     #eef0f4;
+  --border:        rgba(15,17,23,0.12);
+  --border-strong: rgba(15,17,23,0.22);
 
-  --text-primary:   #e8eaf0;
-  --text-secondary: #9aa3b4;
-  --text-muted:     #5c6478;
+  --text-primary:   #14171f;
+  --text-secondary: #3d4353;
+  --text-muted:     #6b7284;
 
-  --accent:       #f5a623;
-  --accent-dim:   rgba(245,166,35,0.12);
-  --accent-hover: #f7b944;
-  --on-accent:    #0f1117;
+  --accent:       #b5680a;
+  --accent-dim:   rgba(181,104,10,0.12);
+  --accent-hover: #965805;
+  --on-accent:    #ffffff;
 
-  --success:     #34d399;
-  --success-dim: rgba(52,211,153,0.1);
-  --warning:     #fbbf24;
-  --warning-dim: rgba(251,191,36,0.1);
-  --danger:      #f87171;
-  --danger-dim:  rgba(248,113,113,0.1);
+  --success:     #0f7a4f;
+  --success-dim: rgba(15,122,79,0.12);
+  --warning:     #92620a;
+  --warning-dim: rgba(146,98,10,0.12);
+  --danger:      #b3261e;
+  --danger-dim:  rgba(179,38,30,0.12);
 
   --radius-sm: 6px;
   --radius:    8px;

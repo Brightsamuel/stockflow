@@ -20,10 +20,27 @@ export default function SearchPage() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   useEffect(() => {
     fetch('/api/auth/me').then(res => res.json()).then(setCurrentUser).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!q.trim() || q.trim().length < 2) {
+      setSuggestions([])
+      return
+    }
+    const timer = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q.trim())}`)
+        .then(res => res.json())
+        .then(data => setSuggestions(Array.isArray(data) ? data.slice(0, 6) : []))
+        .catch(() => setSuggestions([]))
+    }, 300) // debounce — waits for typing to pause before firing
+
+    return () => clearTimeout(timer)
+  }, [q])
 
   async function runSearch(e) {
     e.preventDefault()
@@ -82,12 +99,48 @@ export default function SearchPage() {
       <div className={styles.content}>
         <form onSubmit={runSearch} className={styles.field} style={{ maxWidth: 480, marginBottom: 24 }}>
           <label>Product name</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="e.g. Maize" />
+            <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input 
+                  value={q}
+                  onChange={e => { setQ(e.target.value); setShowSuggestions(true) }}
+                  onFocus={() => setShowSuggestions(true)}
+                  placeholder="Name of item" 
+                />
             <button type="submit" className={styles.btnPrimary} disabled={loading}>
               {loading ? '…' : 'Search'}
             </button>
+
+
+            <div style={{ marginBottom: 12 }}>
+              <button className={styles.btnGhost} onClick={() => router.back()}>
+                <i className="ti ti-arrow-left" /> Back
+              </button>
+            </div>
           </div>
+
+          {showSuggestions && suggestions.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+              background: 'var(--surface-2)',
+              border: '0.5px solid var(--border-strong)',
+              borderRadius: 'var(--radius)',
+              marginTop: 4, maxHeight: 220, overflowY: 'auto',
+            }}>
+              {suggestions.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => { setSelected(p); setShowSuggestions(false); setQ(p.name) }}
+                  style={{ padding: '8px 12px', cursor: 'pointer', color: 'var(--text-primary)' }}
+                  onMouseDown={e => e.preventDefault()} // prevents input blur from beating the click
+                >
+                  {p.name} <span className={styles.fieldHint}>({p.unit.name})</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         </form>
 
         {!selected && results.length > 0 && (
@@ -132,7 +185,7 @@ export default function SearchPage() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
               <button className={styles.btnGhost} onClick={() => setSelected(null)}>
-                <i className="ti ti-arrow-left" /> Back to results
+                <i className="ti ti-arrow-left" /> search again
               </button>
               {currentUser?.role === 'SUPER_ADMIN' && (
                 <button className={`${styles.btnGhost} ${styles.iconBtnDanger}`} onClick={clearHistory}>
