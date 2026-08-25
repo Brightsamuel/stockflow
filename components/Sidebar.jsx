@@ -1,4 +1,5 @@
 'use client'
+// import { getCurrentUser } from '@/lib/auth'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './Sidebar.module.css'
@@ -295,13 +296,15 @@ export default function Sidebar({ categories, activeStoreId }) {
                 >
                   <i className="ti ti-trash" />
                 </button>
-                <button
-                  className={styles.iconAction}
-                  title={cat.trackLogs ? "Tracking is ON — click to turn off" : "Tracking is OFF — click to turn on"}
-                  onClick={() => toggleTrackLogs(cat.id, !cat.trackLogs)}
-                >
-                  <i className={`ti ${cat.trackLogs ? 'ti-eye' : 'ti-eye-off'}`} />
-                </button>
+                {currentUser?.role === 'SUPER_ADMIN' && (
+                  <button
+                    className={styles.iconAction}
+                    title={cat.trackLogs ? "Tracking is ON — click to turn off" : "Tracking is OFF — click to turn on"}
+                    onClick={() => toggleTrackLogs(cat.id, !cat.trackLogs)}
+                  >
+                    <i className={`ti ${cat.trackLogs ? 'ti-eye' : 'ti-eye-off'}`} />
+                  </button>
+                )}
               </div>
             </div>
 
