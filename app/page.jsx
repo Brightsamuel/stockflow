@@ -1,10 +1,13 @@
 import { getCurrentUser } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import prisma from '@/lib/prisma'
+import { getCurrentUser } from '@/lib/auth'
+import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import styles from '@/dashboard/store.module.css'
 
 export default async function RootPage() {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) redirect('/login')
   const firstStore = await prisma.store.findFirst({
     orderBy: { createdAt: 'asc' },
   })
