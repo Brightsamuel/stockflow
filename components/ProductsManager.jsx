@@ -99,7 +99,7 @@ export default function ProductsManager({ initialProducts, initialUnits }) {
 
       <div className={styles.content}>
         <form className={styles.field} onSubmit={submitProduct} style={{ marginBottom: 24, maxWidth: 480 }}>
-          <label>Product name</label>
+          <label>Create Product Name</label>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Maize" />
 
           <label style={{ marginTop: 12 }}>Unit</label>
