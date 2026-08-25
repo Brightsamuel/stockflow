@@ -13,7 +13,7 @@ function fmtDate(date) {
   })
 }
 
-export default function SearchClient() {
+export default function SearchClient({ currentUser }) {
   const router = useRouter()
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
@@ -21,6 +21,9 @@ export default function SearchClient() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [clearError, setClearError] = useState('')
+
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN'
 
   useEffect(() => {
     if (!q.trim() || q.trim().length < 2) {
@@ -53,6 +56,24 @@ export default function SearchClient() {
     }
   }
 
+  async function clearHistory() {
+    if (!selected || !isSuperAdmin) return
+    if (!confirm(`Clear all history for ${selected.name}? This cannot be undone.`)) return
+
+    setLoading(true)
+    setClearError('')
+    try {
+      const res = await fetch(`/api/products/${selected.id}/logs`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to clear history')
+      setSelected(product => ({ ...product, logs: [] }))
+    } catch (error) {
+      setClearError(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Merge logs + transfers into one chronological movement feed
   function buildTimeline(product) {
     const fromLogs = product.logs.map(l => ({
@@ -68,7 +89,7 @@ export default function SearchClient() {
   }
 
   return (
-    <div className={styles.main}>
+    <>
       <div className={styles.topbar}>
         <div className={styles.topbarLeft}>
           <h2 className={styles.storeName}>Product history</h2>
@@ -77,11 +98,11 @@ export default function SearchClient() {
       </div>
 
       <div className={styles.content}>
-        <div style={{ marginBottom: 12 }}>
+        {/* <div style={{ marginBottom: 12 }}>
           <button className={styles.btnGhost} onClick={() => router.back()}>
             <i className="ti ti-arrow-left" /> Back
           </button>
-        </div>
+        </div> */}
 
         <form onSubmit={runSearch} className={styles.field} style={{ maxWidth: 480, marginBottom: 24 }}>
           <label>Product name</label>
@@ -163,7 +184,15 @@ export default function SearchClient() {
               <i className="ti ti-arrow-left" /> Back to results
             </button>
 
-            <h3 style={{ marginBottom: 4 }}>{selected.name}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+              <h3>{selected.name}</h3>
+              {isSuperAdmin && (
+                <button className={styles.btnGhost} onClick={clearHistory} disabled={loading}>
+                  <i className="ti ti-trash" /> {loading ? 'Clearing…' : 'Clear history'}
+                </button>
+              )}
+            </div>
+            {clearError && <p className={styles.errorMsg}>{clearError}</p>}
             <p className={styles.storeMeta} style={{ marginBottom: 16 }}>
               Unit: {selected.unit.name}
             </p>
@@ -221,6 +250,6 @@ export default function SearchClient() {
           </>
         )}
       </div>
-    </div>
+    </>
   )
 }

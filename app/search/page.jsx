@@ -23,7 +23,7 @@ export default async function SearchPage() {
     <div className={styles.shell}>
       <Sidebar categories={categories} activeStoreId={null} currentUser={currentUser} />
       <div className={styles.main}>
-        <SearchClient />
+        <SearchClient currentUser={currentUser} />
       </div>
     </div>
   )
