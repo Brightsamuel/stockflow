@@ -1,3 +1,4 @@
+import prisma from "@/lib/prisma";
 import { getCurrentUser } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
