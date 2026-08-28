@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './Sidebar.module.css'
 
-export default function Sidebar({ categories, activeStoreId, currentUser: initialUser = null }) {
+export default function Sidebar({ categories, activeStoreId, currentUser }) {
   const router = useRouter()
-  const [currentUser, setCurrentUser] = useState(initialUser)
+  // const [currentUser, setCurrentUser] = useState(initialUser)
   const [categoryList, setCategoryList] = useState(categories)
   const [openCats, setOpenCats] = useState(() => {
     const initial = {}
@@ -35,14 +35,14 @@ export default function Sidebar({ categories, activeStoreId, currentUser: initia
     }
   }
 
-  useEffect(() => {
-    if (initialUser) return undefined
+  // useEffect(() => {
+  //   if (initialUser) return undefined
 
-    fetch('/api/auth/me')
-      .then(res => res.json())
-      .then(data => setCurrentUser(data))
-      .catch(() => setCurrentUser(null))
-  }, [initialUser])
+  //   fetch('/api/auth/me')
+  //     .then(res => res.json())
+  //     .then(data => setCurrentUser(data))
+  //     .catch(() => setCurrentUser(null))
+  // }, [initialUser])
 
   useEffect(() => {
     setCategoryList(categories)
