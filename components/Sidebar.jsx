@@ -58,7 +58,6 @@ export default function Sidebar({ categories, activeStoreId, currentUser: initia
   const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN'
 
   const [showNewCat, setShowNewCat] = useState(false)
-  // const [newCatTrackLogs, setNewCatTrackLogs] = useState(false)
   const [showNewStore, setShowNewStore] = useState(null)
   const [editingCatId, setEditingCatId] = useState(null)
   const [editingStoreId, setEditingStoreId] = useState(null)
@@ -73,22 +72,32 @@ export default function Sidebar({ categories, activeStoreId, currentUser: initia
 
   async function submitNewCategory(e) {
     e.preventDefault()
+
     if (!newCatName.trim()) return
+
     setLoading(true)
     setActionMessage('')
 
     try {
-      // const res = await fetch('/api/categories', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ name: newCatName.trim(), trackLogs: newCatTrackLogs }),
-      // })
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: newCatName.trim(),
+        }),
+      })
+
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Unable to create category')
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Unable to create category')
+      }
 
       setNewCatName('')
-      setNewCatTrackLogs(false)
       setShowNewCat(false)
+
       await refreshCategories()
       router.refresh()
     } catch (error) {
@@ -450,7 +459,10 @@ export default function Sidebar({ categories, activeStoreId, currentUser: initia
 
         {/* New category */}
         {showNewCat ? (
-          <form className={styles.newCatForm} onSubmit={submitNewCategory}>
+          <form
+            className={styles.newCatForm}
+            onSubmit={submitNewCategory}
+          >
             <input
               autoFocus
               className={styles.inlineInput}
@@ -458,27 +470,35 @@ export default function Sidebar({ categories, activeStoreId, currentUser: initia
               onChange={e => setNewCatName(e.target.value)}
               placeholder="Category name…"
             />
-            {/* <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, marginTop: 6 }}>
-              <input
-                type="checkbox"
-                checked={newCatTrackLogs}
-                onChange={e => setNewCatTrackLogs(e.target.checked)}
-              />
-              Track who adds/edits/transfers stock in this category
-            </label> */}
+
             <div className={styles.inlineActions}>
-              <button type="submit" className={styles.inlineSubmit} disabled={loading}>
+              <button
+                type="submit"
+                className={styles.inlineSubmit}
+                disabled={loading}
+              >
                 {loading ? '…' : 'Add'}
               </button>
-              <button type="button" className={styles.inlineCancel}
-                onClick={() => { setShowNewCat(false); setNewCatName(''); setNewCatTrackLogs(false) }}>
+
+              <button
+                type="button"
+                className={styles.inlineCancel}
+                onClick={() => {
+                  setShowNewCat(false)
+                  setNewCatName('')
+                }}
+              >
                 Cancel
               </button>
             </div>
           </form>
         ) : (
-          <button className={styles.newCatBtn} onClick={() => setShowNewCat(true)}>
-            <i className="ti ti-plus" style={{ fontSize: 14 }} /> New category
+          <button
+            className={styles.newCatBtn}
+            onClick={() => setShowNewCat(true)}
+          >
+            <i className="ti ti-plus" style={{ fontSize: 14 }} />
+            New category
           </button>
         )}
       </div>
