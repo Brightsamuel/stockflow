@@ -2,10 +2,12 @@
 // import { getCurrentUser } from '@/lib/auth'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConfirm } from '@/components/ConfirmProvider'
 import styles from './Sidebar.module.css'
 
 export default function Sidebar({ categories, activeStoreId, currentUser: initialUser = null }) {
   const router = useRouter()
+  const { confirm } = useConfirm()
   const [currentUser, setCurrentUser] = useState(initialUser)
   const [categoryList, setCategoryList] = useState(categories)
   const [openCats, setOpenCats] = useState(() => {
@@ -132,7 +134,8 @@ export default function Sidebar({ categories, activeStoreId, currentUser: initia
   }
 
   async function deleteCategory(catId) {
-    if (!confirm('Delete this category? It must be empty first.')) return
+    const ok = await confirm('Delete this category? It must be empty first.')
+    if (!ok) return
     setLoading(true)
     setActionMessage('')
 
@@ -195,7 +198,8 @@ export default function Sidebar({ categories, activeStoreId, currentUser: initia
   }
 
   async function deleteStore(storeId) {
-    if (!confirm('Delete this store? This cannot be undone.')) return
+    const ok = await confirm('Delete this store? This cannot be undone.')
+    if (!ok) return
     setLoading(true)
     setActionMessage('')
 

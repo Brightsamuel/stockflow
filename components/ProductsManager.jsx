@@ -1,12 +1,14 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConfirm } from '@/components/ConfirmProvider'
 import styles from '@/dashboard/store.module.css'
 
 const NEW_UNIT_VALUE = '__new_unit__'
 
 export default function ProductsManager({ initialProducts, initialUnits }) {
   const router = useRouter()
+  const { confirm } = useConfirm()
   const [products, setProducts] = useState(initialProducts)
   const [units, setUnits] = useState(initialUnits)
 
@@ -74,7 +76,8 @@ export default function ProductsManager({ initialProducts, initialUnits }) {
   }
 
   async function deleteProduct(id) {
-    if (!confirm('Delete this product? It must not be in any store inventory.')) return
+    const ok = await confirm('Delete this product? It must not be in any store inventory.')
+    if (!ok) return
     setLoading(true); setError('')
     try {
       const res = await fetch(`/api/products/${id}`, { method: 'DELETE' })
@@ -100,7 +103,7 @@ export default function ProductsManager({ initialProducts, initialUnits }) {
       <div className={styles.content}>
         <form className={styles.field} onSubmit={submitProduct} style={{ marginBottom: 24, maxWidth: 480 }}>
           <label>Create Product Name</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Maize" />
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Book" />
 
           <label style={{ marginTop: 12 }}>Unit</label>
           <select value={unitId} onChange={e => setUnitId(e.target.value)}>

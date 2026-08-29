@@ -1,4 +1,5 @@
 import './globals.css'
+import { ConfirmProvider } from '@/components/ConfirmProvider'
 
 export const metadata = {
   title: 'StockFlow',
@@ -14,7 +15,11 @@ export default function RootLayout({ children }) {
           href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <ConfirmProvider>
+          {children}
+        </ConfirmProvider>
+      </body>
     </html>
   )
 }

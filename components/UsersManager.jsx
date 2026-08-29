@@ -1,10 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConfirm } from '@/components/ConfirmProvider'
 import styles from '@/dashboard/store.module.css'
 
 export default function UsersManager({ initialUsers, currentUserId, currentUserRole }) {
   const router = useRouter()
+  const { confirm } = useConfirm()
   const [users, setUsers] = useState(initialUsers)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -69,7 +71,8 @@ export default function UsersManager({ initialUsers, currentUserId, currentUserR
   }
 
   async function deleteUser(userId) {
-    if (!confirm('Permanently delete this user? This cannot be undone.')) return
+    const ok = await confirm('Permanently delete this user? This cannot be undone.')
+    if (!ok) return
     setLoading(true); setError('')
     try {
       const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' })

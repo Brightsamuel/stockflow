@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConfirm } from '@/components/ConfirmProvider'
 import styles from '@/dashboard/store.module.css'
 
 function fmt(n) {
@@ -15,6 +16,7 @@ function fmtDate(date) {
 
 export default function SearchClient({ currentUser }) {
   const router = useRouter()
+  const { confirm, notify } = useConfirm()
   const [q, setQ] = useState('')
   const [results, setResults] = useState([])
   const [suggestions, setSuggestions] = useState([])
@@ -58,15 +60,26 @@ export default function SearchClient({ currentUser }) {
 
   async function clearHistory() {
     if (!selected || !isSuperAdmin) return
-    if (!confirm(`Clear all history for ${selected.name}? This cannot be undone.`)) return
+    const count = buildTimeline(selected).length
+    const ok = await confirm({
+      title: 'Clear history',
+      message: `This will permanently delete all ${count} history entries for "${selected.name}" across every store. Current stock balances are not affected, but this product's opening balance in future reports will reset to zero from this point forward. This cannot be undone.`,
+      requireText: selected.name,
+      confirmLabel: 'Clear history',
+      danger: true,
+    })
+    if (!ok) return
 
     setLoading(true)
     setClearError('')
     try {
       const res = await fetch(`/api/products/${selected.id}/logs`, { method: 'DELETE' })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to clear history')
-      setSelected(product => ({ ...product, logs: [] }))
+      if (!res.ok) { await notify(data.error || 'Failed to clear history'); return }
+      await notify(`Cleared ${data.deletedCount} history entries.`)
+      setSelected(null)
+      setResults([])
+      setQ('')
     } catch (error) {
       setClearError(error.message)
     } finally {
@@ -112,7 +125,7 @@ export default function SearchClient({ currentUser }) {
                 value={q}
                 onChange={e => { setQ(e.target.value); setShowSuggestions(true) }}
                 onFocus={() => setShowSuggestions(true)}
-                placeholder="e.g. Maize"
+                placeholder="e.g. Book"
               />
               <button type="submit" className={styles.btnPrimary} disabled={loading}>
                 {loading ? '…' : 'Search'}
@@ -175,7 +188,7 @@ export default function SearchClient({ currentUser }) {
         )}
 
         {!loading && q && results.length === 0 && (
-          <p className={styles.fieldHint}>No products matched "{q}".</p>
+          <p className={styles.fieldHint}>Results for "{q}".</p>
         )}
 
         {selected && (

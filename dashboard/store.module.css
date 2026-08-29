@@ -293,7 +293,7 @@
   background: none;
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 14px;
   display: flex;

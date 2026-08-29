@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConfirm } from '@/components/ConfirmProvider'
 import { apiFetch } from '@/lib/apiFetch'
 import styles from './store.module.css'
 
@@ -412,6 +413,7 @@ function EditItemModal({ item, onClose, onDone }) {
 // ── Main Dashboard ─────────────────────────────────────────────────────────
 export default function StoreDashboard({ store, allStores, transfers, currentUser }) {
   const router = useRouter()
+  const { confirm, notify } = useConfirm()
   const [tab, setTab] = useState('inventory')
   const [modal, setModal] = useState(null)
   const [addingItem, setAddingItem] = useState(false)
@@ -433,7 +435,8 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
   }
 
   async function deleteItem(id) {
-    if (!confirm('Remove this item from the store?')) return
+    const ok = await confirm('Remove this item from the store?')
+    if (!ok) return
     setDeletingId(id)
     await apiFetch(`/api/items/${id}`, { method: 'DELETE' })
     setDeletingId(null)
@@ -441,11 +444,12 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
   }
 
   async function permanentlyDeleteItem(id) {
-    if (!confirm('Permanently delete this item? This cannot be undone and history for it will be lost.')) return
+    const ok = await confirm('Permanently delete this item? This cannot be undone and history for it will be lost.')
+    if (!ok) return
     const res = await apiFetch(`/api/items/${id}/permanent`, { method: 'DELETE' })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
-      alert(data.error || 'Failed to permanently delete item.')
+      notify(data.error || 'Failed to permanently delete item.')
       return
     }
     router.refresh()

@@ -159,7 +159,7 @@
 .iconAction {
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   padding: 4px;
   border-radius: var(--radius-sm);
   cursor: pointer;
