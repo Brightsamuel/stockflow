@@ -54,7 +54,7 @@ export default async function StorePage({ params }) {
     }),
     prisma.stockLog.findMany({
       where: { storeId: id, type: { in: ['IN', 'TRANSFER_IN', 'TRANSFER_OUT'] } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { entryDate: 'desc' },
       select: { productId: true, type: true, quantity: true },
     }),
   ])

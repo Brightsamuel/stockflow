@@ -81,6 +81,7 @@ model StockLog {
   rate        Float
   note        String?
   refNo       String?
+  entryDate   DateTime   @default(now())
   userId      String?
   recipientId String?
   store       Store      @relation(fields: [storeId], references: [id])

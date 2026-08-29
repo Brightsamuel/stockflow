@@ -96,7 +96,7 @@ export default function SearchClient({ currentUser }) {
       note: l.note,
       store: l.store.name,
       user: l.user?.username || null,
-      createdAt: l.createdAt,
+      createdAt: l.entryDate,
     }))
     return fromLogs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   }

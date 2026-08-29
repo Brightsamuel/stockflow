@@ -34,7 +34,7 @@ export async function POST(req) {
   }
 
   try {
-    const { sourceStoreId, targetStoreId, recipientId, productId, quantity } = await req.json()
+    const { sourceStoreId, targetStoreId, recipientId, productId, quantity, entryDate } = await req.json()
 
     if (!sourceStoreId || !productId || quantity == null)
       return NextResponse.json({ error: "All fields required" }, { status: 400 })
@@ -46,6 +46,18 @@ export async function POST(req) {
       return NextResponse.json({ error: "Choose either a store or a recipient, not both" }, { status: 400 })
     if (targetStoreId && sourceStoreId === targetStoreId)
       return NextResponse.json({ error: "Source and target cannot be the same" }, { status: 400 })
+    let parsedDate = entryDate ? new Date(entryDate) : new Date()
+    if (isNaN(parsedDate)) parsedDate = new Date()
+    if (parsedDate > new Date())
+      return NextResponse.json({ error: "Transfer date cannot be in the future" }, { status: 400 })
+
+    const earliest = await earliestEntryDate(productId, sourceStoreId)
+    if (earliest && parsedDate < earliest) {
+      return NextResponse.json(
+        { error: `This item wasn't recorded in this store until ${earliest.toISOString().slice(0, 10)}. Transfer date can't be earlier than that.` },
+        { status: 400 }
+      )
+    }
 
     const sourceEntry = await prisma.stockEntry.findUnique({
       where: { productId_storeId: { productId, storeId: sourceStoreId } },

@@ -30,7 +30,8 @@ function AddItemRow({ storeId, onDone, onCancel }) {
   const rowRef = useRef(null)
   const [products, setProducts] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(true)
-  const [form, setForm] = useState({ productId: '', rate: '', quantity: '', lowStockAt: '', refNo: '' })
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const [form, setForm] = useState({ productId: '', rate: '', quantity: '', lowStockAt: '', refNo: '', entryDate: todayStr })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -62,6 +63,7 @@ function AddItemRow({ storeId, onDone, onCancel }) {
           quantity: parseFloat(form.quantity),
           lowStockAt: form.lowStockAt ? parseFloat(form.lowStockAt) : 0,
           refNo: form.refNo.trim() || null,
+          entryDate: form.entryDate,
         }),
       })
       const data = await res.json()
@@ -115,6 +117,15 @@ function AddItemRow({ storeId, onDone, onCancel }) {
         </td>
         <td>
           <input
+            type="date"
+            value={form.entryDate}
+            onChange={e => set('entryDate', e.target.value)}
+            max={todayStr}
+            className={styles.inlineInputSmall}
+          />
+        </td>
+        <td>
+          <input
             type="number" min="0" placeholder="Low at"
             value={form.lowStockAt} onChange={e => set('lowStockAt', e.target.value)}
             className={styles.inlineInputSmall}
@@ -157,9 +168,11 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
   const [newRecipientName, setNewRecipientName] = useState('')
   const [newRecipientCompany, setNewRecipientCompany] = useState('')
   const [quantity, setQuantity] = useState('')
+  const [entryDate, setEntryDate] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const todayStr = new Date().toISOString().split('T')[0]
   useEffect(() => {
     fetch('/api/recipients')
       .then(res => res.json())
@@ -170,8 +183,11 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
   const selectedItem = store.items.find(i => i.id === selectedItemId)
 
   async function submit() {
-    if (!selectedItemId || !quantity) {
-      setError('Item and quantity are required.'); return
+    // if (!selectedItemId || !quantity) {
+    //   setError('Item and quantity are required.'); return
+    // }
+    if (!selectedItemId || !quantity || !entryDate) {
+      setError('Item, quantity, and date are required.'); return
     }
     if (mode === 'store' && !targetStoreId) {
       setError('Select a destination store.'); return
@@ -205,6 +221,7 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
         sourceStoreId: store.id,
         productId: selectedItem.productId,
         quantity: parseFloat(quantity),
+        entryDate: entryDate || undefined, 
       }
       if (mode === 'store') body.targetStoreId = targetStoreId
       else body.recipientId = finalRecipientId
@@ -311,6 +328,10 @@ function StockOutModal({ store, allStores, onClose, onDone }) {
                 Max: {selectedItem.quantity} {selectedItem.unit}
               </span>
             )}
+          </div>
+          <div className={styles.field}>
+            <label>Date</label>
+            <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} max={todayStr} />
           </div>
 
           <div className={styles.transferNote}>

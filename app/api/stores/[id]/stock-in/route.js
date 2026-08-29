@@ -14,13 +14,17 @@ export async function POST(req, { params }) {
  }
 
   try {
-    const { productId, rate, quantity, lowStockAt, refNo } = await req.json()
+    const { productId, rate, quantity, lowStockAt, refNo, entryDate  } = await req.json()
 
     if (!productId || rate == null || quantity == null)
       return NextResponse.json({ error: "productId, rate and quantity are required" }, { status: 400 })
     if (rate < 0 || quantity <= 0)
       return NextResponse.json({ error: "Rate must be 0 or greater, and quantity must be greater than 0" }, { status: 400 })
 
+    let parsedDate = entryDate ? new Date(entryDate) : new Date()
+    if (isNaN(parsedDate)) parsedDate = new Date()
+    if (parsedDate > new Date())
+      return NextResponse.json({ error: "Entry date cannot be in the future" }, { status: 400 })
     const store = await prisma.store.findUnique({
       where: { id },
       include: { category: { select: { trackLogs: true } } },
@@ -59,7 +63,7 @@ export async function POST(req, { params }) {
       }
 
       await tx.stockLog.create({
-        data: { storeId: id, productId, type: "IN", quantity, rate, userId: logUserId, refNo: refNo?.trim() || null },
+        data: { storeId: id, productId, type: "IN", quantity, rate, userId: logUserId, refNo: refNo?.trim() || null, entryDate: parsedDate },
       })
 
       return entry
