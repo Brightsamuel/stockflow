@@ -15,7 +15,7 @@ export async function PUT(req, { params }) {
     const body = await req.json()
     const data = {}
     if (body.rate != null) {
-      if (body.rate <= 0) return NextResponse.json({ error: "Rate must be > 0" }, { status: 400 })
+      if (body.rate < 0) return NextResponse.json({ error: "Rate cannot be negative" }, { status: 400 })
       data.rate = body.rate
     }
     if (body.quantity != null) {

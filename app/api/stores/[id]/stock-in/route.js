@@ -18,8 +18,8 @@ export async function POST(req, { params }) {
 
     if (!productId || rate == null || quantity == null)
       return NextResponse.json({ error: "productId, rate and quantity are required" }, { status: 400 })
-    if (rate <= 0 || quantity <= 0)
-      return NextResponse.json({ error: "Rate and quantity must be greater than 0" }, { status: 400 })
+    if (rate < 0 || quantity <= 0)
+      return NextResponse.json({ error: "Rate must be 0 or greater, and quantity must be greater than 0" }, { status: 400 })
 
     const store = await prisma.store.findUnique({
       where: { id },

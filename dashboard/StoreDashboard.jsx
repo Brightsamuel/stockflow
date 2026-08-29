@@ -48,7 +48,7 @@ function AddItemRow({ storeId, onDone, onCancel }) {
   function set(field, val) { setForm(f => ({ ...f, [field]: val })) }
 
   async function submit() {
-    if (!form.productId || !form.rate || !form.quantity) {
+    if (!form.productId || form.rate === '' || form.rate == null || !form.quantity) {
       setError('Product, rate and quantity are required.'); return
     }
     setLoading(true); setError('')
