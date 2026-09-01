@@ -9,7 +9,6 @@ import styles from '@/dashboard/store.module.css'
 export default async function StorePage({ params }) {
   const { id } = await params
 
-  // const currentUser = await requireUser()
   const currentUser = await getCurrentUser()
 
   if (!currentUser) {
@@ -54,7 +53,7 @@ export default async function StorePage({ params }) {
     }),
     prisma.stockLog.findMany({
       where: { storeId: id, type: { in: ['IN', 'TRANSFER_IN', 'TRANSFER_OUT'] } },
-      orderBy: { entryDate: 'desc' },
+      orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
       select: { productId: true, type: true, quantity: true },
     }),
   ])
@@ -101,7 +100,7 @@ export default async function StorePage({ params }) {
 
   return (
     <div className={styles.shell}>
-      <Sidebar categories={categories} activeStoreId={id} />
+      <Sidebar categories={categories} activeStoreId={id} currentUser={currentUser} />
       <div className={styles.main}>
         <StoreDashboard
           store={{ ...store, items, deletedItems }}
