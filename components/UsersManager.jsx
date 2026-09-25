@@ -1,7 +1,8 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/ConfirmProvider'
+import PasswordInput from '@/components/PasswordInput'
 import styles from '@/dashboard/store.module.css'
 
 export default function UsersManager({ initialUsers, currentUserId, currentUserRole }) {
@@ -13,6 +14,9 @@ export default function UsersManager({ initialUsers, currentUserId, currentUserR
   const [role, setRole] = useState('STANDARD')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [resetUserId, setResetUserId] = useState(null)
+  const [resetPassword, setResetPassword] = useState('')
+  const [notice, setNotice] = useState('')
 
   const allowedRoles = currentUserRole === 'SUPER_ADMIN'
     ? ['STANDARD', 'ADMIN', 'SUPER_ADMIN']
@@ -70,6 +74,27 @@ export default function UsersManager({ initialUsers, currentUserId, currentUserR
     }
   }
 
+  async function submitReset(e, user) {
+    e.preventDefault()
+    if (!resetPassword) return
+    setLoading(true); setError(''); setNotice('')
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: resetPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setResetUserId(null); setResetPassword('')
+      setNotice(`Password for ${user.username} has been reset.`)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function deleteUser(userId) {
     const ok = await confirm('Permanently delete this user? This cannot be undone.')
     if (!ok) return
@@ -101,7 +126,7 @@ export default function UsersManager({ initialUsers, currentUserId, currentUserR
           <input value={username} onChange={e => setUsername(e.target.value)} />
 
           <label style={{ marginTop: 12 }}>Password</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} />
+          <PasswordInput value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
 
           <label style={{ marginTop: 12 }}>Role</label>
           <select value={role} onChange={e => setRole(e.target.value)}>
@@ -113,6 +138,7 @@ export default function UsersManager({ initialUsers, currentUserId, currentUserR
           </select>
 
           {error && <p className={styles.errorMsg}>{error}</p>}
+          {notice && <p className={styles.fieldHint} style={{ color: 'var(--success)' }}>{notice}</p>}
 
           <button type="submit" className={styles.btnPrimary} disabled={loading} style={{ marginTop: 12 }}>
             {loading ? 'Adding…' : 'Add user'}
@@ -131,7 +157,8 @@ export default function UsersManager({ initialUsers, currentUserId, currentUserR
             </thead>
             <tbody>
               {users.map(u => (
-                <tr key={u.id}>
+                <Fragment key={u.id}>
+                <tr>
                   <td className={styles.itemName}>
                     {u.username} {u.id === currentUserId && <span className={styles.fieldHint}>(you)</span>}
                   </td>
@@ -152,6 +179,18 @@ export default function UsersManager({ initialUsers, currentUserId, currentUserR
                       >
                         {u.isActive ? 'Deactivate' : 'Reactivate'}
                       </button>
+                      {u.id !== currentUserId && (u.role !== 'SUPER_ADMIN' || currentUserRole === 'SUPER_ADMIN') && (
+                        <button
+                          className={styles.btnGhost}
+                          onClick={() => {
+                            setResetUserId(resetUserId === u.id ? null : u.id)
+                            setResetPassword(''); setError(''); setNotice('')
+                          }}
+                          disabled={loading}
+                        >
+                          Reset password
+                        </button>
+                      )}
                       {currentUserRole === 'SUPER_ADMIN' && u.id !== currentUserId && (
                         <button
                           className={`${styles.btnGhost} ${styles.iconBtnDanger}`}
@@ -164,6 +203,30 @@ export default function UsersManager({ initialUsers, currentUserId, currentUserR
                     </div>
                   </td>
                 </tr>
+                {resetUserId === u.id && (
+                  <tr>
+                    <td colSpan={4}>
+                      <form onSubmit={e => submitReset(e, u)} className={styles.field} style={{ maxWidth: 480 }}>
+                        <label>New password for {u.username}</label>
+                        <PasswordInput
+                          value={resetPassword}
+                          onChange={e => setResetPassword(e.target.value)}
+                          autoComplete="new-password"
+                          autoFocus
+                        />
+                        <div className={styles.rowActions} style={{ marginTop: 8 }}>
+                          <button type="submit" className={styles.btnPrimary} disabled={loading || !resetPassword}>
+                            {loading ? 'Saving…' : 'Set password'}
+                          </button>
+                          <button type="button" className={styles.btnGhost} onClick={() => setResetUserId(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

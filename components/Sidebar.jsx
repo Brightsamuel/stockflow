@@ -508,6 +508,9 @@ export default function Sidebar({ categories, activeStoreId, currentUser: initia
       </div>
 
       <div style={{ marginTop: 'auto', padding: '12px 16px' }}>
+        <button className={styles.addStoreBtn} onClick={() => router.push('/account')}>
+          <i className="ti ti-key" style={{ fontSize: 13 }} /> Change password
+        </button>
         <button
           className={styles.addStoreBtn}
           onClick={async () => {

@@ -1,7 +1,6 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
-import { requireAdmin } from "@/lib/auth"
-import { requireSuperAdmin } from "@/lib/auth"
+import { requireAdmin, requireSuperAdmin, hashPassword } from "@/lib/auth"
 
 export async function PATCH(req, { params }) {
   const { id } = await params
@@ -13,17 +12,31 @@ export async function PATCH(req, { params }) {
   }
 
   try {
-    const { isActive } = await req.json()
-    if (isActive == null)
+    const { isActive, password } = await req.json()
+    if (isActive == null && !password)
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
 
     if (id === admin.id && isActive === false)
       return NextResponse.json({ error: "You cannot deactivate your own account" }, { status: 400 })
 
+    const data = {}
+    if (isActive != null) data.isActive = isActive
+
+    // Admin password reset (users change their own via /api/auth/password)
+    if (password) {
+      if (password.length < 4)
+        return NextResponse.json({ error: "Password must be at least 4 characters" }, { status: 400 })
+      const target = await prisma.user.findUnique({ where: { id }, select: { role: true } })
+      if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 })
+      if (target.role === "SUPER_ADMIN" && admin.role !== "SUPER_ADMIN")
+        return NextResponse.json({ error: "Only Super Admins can reset a Super Admin's password" }, { status: 403 })
+      data.passwordHash = hashPassword(password)
+    }
+
     const user = await prisma.user.update({
       where: { id },
-      data: { isActive },
-      select: { id: true, username: true, isAdmin: true, isActive: true, createdAt: true },
+      data,
+      select: { id: true, username: true, role: true, isActive: true, createdAt: true },
     })
     return NextResponse.json(user)
   } catch (e) {
