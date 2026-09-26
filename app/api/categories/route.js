@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 
 export async function GET() {
   const categories = await prisma.category.findMany({
+    where: { isSystem: false },
     include: {
       stores: {
         include: { _count: { select: { entries: true } } },

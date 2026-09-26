@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Category" ADD COLUMN     "isSystem" BOOLEAN NOT NULL DEFAULT false;
+
+-- AlterTable
+ALTER TABLE "Product" ADD COLUMN     "openingQty" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "openingRate" DOUBLE PRECISION NOT NULL DEFAULT 0;

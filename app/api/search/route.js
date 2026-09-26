@@ -12,13 +12,13 @@ export async function GET(req) {
       return NextResponse.json([])
 
     const products = await prisma.product.findMany({
-      where: { name: { contains: q } },
+      where: { name: { contains: q, mode: "insensitive" } },
       include: {
         unit: true,
         entries: {
           include: {
             store: {
-              select: { id: true, name: true, category: { select: { name: true } } },
+              select: { id: true, name: true, category: { select: { name: true, isSystem: true } } },
             },
           },
         },

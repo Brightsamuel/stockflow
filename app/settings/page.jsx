@@ -14,6 +14,7 @@ export default async function SettingsPage() {
   const [settings, categories] = await Promise.all([
     prisma.settings.findUnique({ where: { id: 'singleton' } }),
     prisma.category.findMany({
+      where: { isSystem: false },
       include: { stores: { include: { _count: { select: { entries: true } } }, orderBy: { createdAt: 'asc' } } },
       orderBy: { createdAt: 'asc' },
     }),

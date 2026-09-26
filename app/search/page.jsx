@@ -10,6 +10,7 @@ export default async function SearchPage() {
   if (!currentUser) redirect('/login')
 
   const categories = await prisma.category.findMany({
+    where: { isSystem: false },
     include: {
       stores: {
         include: { _count: { select: { entries: true } } },

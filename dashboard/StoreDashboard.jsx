@@ -159,9 +159,10 @@ function AddItemRow({ storeId, onDone, onCancel }) {
 // ── Stock Out (Transfer) Modal ─────────────────────────────────────────────
 const NEW_RECIPIENT_VALUE = '__new_recipient__'
 
-function StockOutModal({ store, allStores, onClose, onDone }) {
+// Also used by Manage Products to issue from the opening balance
+export function StockOutModal({ store, allStores, onClose, onDone, initialItemId = '' }) {
   const [mode, setMode] = useState('store') // 'store' | 'external'
-  const [selectedItemId, setSelectedItemId] = useState('')
+  const [selectedItemId, setSelectedItemId] = useState(initialItemId)
   const [targetStoreId, setTargetStoreId] = useState('')
   const [recipients, setRecipients] = useState([])
   const [recipientId, setRecipientId] = useState('')

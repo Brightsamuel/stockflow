@@ -16,6 +16,7 @@ export default async function UsersPage() {
       orderBy: { createdAt: 'asc' },
     }),
     prisma.category.findMany({
+      where: { isSystem: false },
       include: {
         stores: {
           include: { _count: { select: { entries: true } } },

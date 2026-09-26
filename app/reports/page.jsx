@@ -9,6 +9,7 @@ export default async function ReportsPage() {
   const currentUser = await getCurrentUser()
   if (!currentUser) redirect('/login')
   const categories = await prisma.category.findMany({
+    where: { isSystem: false },
     include: {
       stores: {
         select: { id: true, name: true },

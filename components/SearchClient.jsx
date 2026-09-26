@@ -213,7 +213,9 @@ export default function SearchClient({ currentUser }) {
             <div className={styles.metrics} style={{ marginBottom: 24 }}>
               {selected.entries.map(entry => (
                 <div key={entry.store.id} className={styles.metric}>
-                  <div className={styles.metricLabel}>{entry.store.name} ({entry.store.category.name})</div>
+                  <div className={styles.metricLabel}>
+                    {entry.store.category.isSystem ? entry.store.name : `${entry.store.name} (${entry.store.category.name})`}
+                  </div>
                   <div className={styles.metricValue}>{fmt(entry.quantity)} {selected.unit.name}</div>
                 </div>
               ))}

@@ -8,6 +8,7 @@ export default async function RootPage() {
   const currentUser = await getCurrentUser()
   if (!currentUser) redirect('/login')
   const firstStore = await prisma.store.findFirst({
+    where: { category: { isSystem: false } },
     orderBy: { createdAt: 'asc' },
   })
 
@@ -16,6 +17,7 @@ export default async function RootPage() {
   }
 
   const categories = await prisma.category.findMany({
+    where: { isSystem: false },
     include: {
       stores: {
         include: { _count: { select: { entries: true } } },

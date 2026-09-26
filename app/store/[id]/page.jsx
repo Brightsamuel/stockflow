@@ -19,7 +19,7 @@ export default async function StorePage({ params }) {
     prisma.store.findUnique({
       where: { id },
       include: {
-        category: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true, isSystem: true } },
         entries: {
           where: { isDeleted: false },
           include: {
@@ -30,6 +30,7 @@ export default async function StorePage({ params }) {
       },
     }),
     prisma.category.findMany({
+      where: { isSystem: false },
       include: {
         stores: {
           include: { _count: { select: { entries: true } } },
@@ -58,7 +59,8 @@ export default async function StorePage({ params }) {
     }),
   ])
 
-  if (!store) notFound()
+  // The hidden opening-balance store is managed from Manage Products only
+  if (!store || store.category.isSystem) notFound()
 
   // Most recent addition per product, and cumulative deducted per product
   const lastAddedMap = {}

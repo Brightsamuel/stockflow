@@ -4,13 +4,15 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Category {
   id        String   @id @default(cuid())
   name      String   @unique
   trackLogs Boolean  @default(false)
+  isSystem  Boolean  @default(false) // hidden category that holds the "Opening balance" store
   stores    Store[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -45,6 +47,9 @@ model Product {
   name      String       @unique
   unitId    String
   unit      Unit         @relation(fields: [unitId], references: [id])
+  // Opening balance as entered in Manage Products; what remains lives in the opening store's StockEntry
+  openingQty  Float      @default(0)
+  openingRate Float      @default(0)
   entries   StockEntry[]
   logs      StockLog[]
   transfers Transfer[]
