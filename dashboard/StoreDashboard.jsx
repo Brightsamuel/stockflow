@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { apiFetch } from '@/lib/apiFetch'
+import { NO_OWNER } from '@/lib/owners'
 import styles from './store.module.css'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -36,12 +37,45 @@ function isFilled(line) {
   return line.productId || line.rate !== '' || line.quantity !== ''
 }
 
+// Whether a ref no. is already in use, checked as the user types
+function useRefExists(refNo) {
+  const [existing, setExisting] = useState(null)
+  useEffect(() => {
+    const ref = refNo.trim()
+    if (!ref) return undefined
+    const timer = setTimeout(() => {
+      fetch(`/api/receipts?q=${encodeURIComponent(ref)}`)
+        .then(res => res.json())
+        .then(data => setExisting(Array.isArray(data) && data.some(r => r.refNo === ref) ? ref : null))
+        .catch(() => {})
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [refNo])
+  return refNo.trim() !== '' && existing === refNo.trim()
+}
+
+// Creates a record through a list API (owners, projects, recipients) and returns its id
+async function createRecord(url, body, fallbackMessage) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || fallbackMessage)
+  return data
+}
+
+const NEW_OWNER_VALUE = '__new_owner__'
+
 function StockInModal({ storeId, onClose, onDone }) {
   const router = useRouter()
   const todayStr = new Date().toISOString().slice(0, 10)
   const [products, setProducts] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(true)
-  const [knownRefs, setKnownRefs] = useState([])
+  const [owners, setOwners] = useState([])
+  const [ownerId, setOwnerId] = useState('')
+  const [newOwnerName, setNewOwnerName] = useState('')
   const [refNo, setRefNo] = useState('')
   const [entryDate, setEntryDate] = useState(todayStr)
   const [lines, setLines] = useState(() => [blankLine()])
@@ -55,13 +89,13 @@ function StockInModal({ storeId, onClose, onDone }) {
       .then(data => setProducts(Array.isArray(data) ? data : []))
       .catch(() => setProducts([]))
       .finally(() => setLoadingProducts(false))
-    fetch('/api/receipts')
+    fetch('/api/owners')
       .then(res => res.json())
-      .then(data => setKnownRefs(Array.isArray(data) ? data.map(r => r.refNo) : []))
-      .catch(() => setKnownRefs([]))
+      .then(data => setOwners(Array.isArray(data) ? data : []))
+      .catch(() => setOwners([]))
   }, [])
 
-  const refExists = refNo.trim() !== '' && knownRefs.includes(refNo.trim())
+  const refExists = useRefExists(refNo)
   const filledCount = lines.filter(isFilled).length
   const total = lines.reduce((s, l) => s + (parseFloat(l.rate) || 0) * (parseFloat(l.quantity) || 0), 0)
 
@@ -83,15 +117,26 @@ function StockInModal({ storeId, onClose, onDone }) {
       return
     }
     if (!entryDate) { setError('Select a date.'); return }
+    if (ownerId === NEW_OWNER_VALUE && !newOwnerName.trim()) { setError('Enter the new owner\'s name.'); return }
 
     setLoading(true); setError(''); setSaved('')
     try {
+      let finalOwnerId = ownerId || null
+      if (ownerId === NEW_OWNER_VALUE) {
+        const owner = await createRecord('/api/owners', { name: newOwnerName.trim() }, 'Unable to create owner')
+        setOwners(list => [...list, owner].sort((a, b) => a.name.localeCompare(b.name)))
+        setOwnerId(owner.id)
+        setNewOwnerName('')
+        finalOwnerId = owner.id
+      }
+
       const res = await apiFetch(`/api/stores/${storeId}/stock-in`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           refNo: refNo.trim() || null,
           entryDate,
+          ownerId: finalOwnerId,
           items: filled.map(l => ({
             productId: l.productId,
             rate: parseFloat(l.rate),
@@ -106,7 +151,6 @@ function StockInModal({ storeId, onClose, onDone }) {
       if (!keepOpen) { onDone(); return }
 
       setSaved(`Saved ${data.count} item${data.count === 1 ? '' : 's'}${data.refNo ? ` under ${data.refNo}` : ''}. Enter the next ref no.`)
-      if (data.refNo) setKnownRefs(r => [...r, data.refNo])
       setRefNo('')
       setLines([blankLine()])
       setLoading(false)
@@ -126,7 +170,7 @@ function StockInModal({ storeId, onClose, onDone }) {
         </div>
 
         <div className={styles.modalBody}>
-          <div className={styles.fieldRow}>
+          <div className={styles.fieldRow} style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
             <div className={styles.field}>
               <label>Ref no.</label>
               <input
@@ -140,11 +184,29 @@ function StockInModal({ storeId, onClose, onDone }) {
               <label>Date</label>
               <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} max={todayStr} />
             </div>
+            <div className={styles.field}>
+              <label>Stock owner</label>
+              <select value={ownerId} onChange={e => setOwnerId(e.target.value)}>
+                <option value="">— none —</option>
+                {owners.map(o => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+                <option value={NEW_OWNER_VALUE}>+ New owner…</option>
+              </select>
+              {ownerId === NEW_OWNER_VALUE && (
+                <input
+                  autoFocus
+                  value={newOwnerName}
+                  onChange={e => setNewOwnerName(e.target.value)}
+                  placeholder="Owner name"
+                />
+              )}
+            </div>
           </div>
           <span className={styles.fieldHint}>
             {refExists
               ? <>Ref no. <strong>{refNo.trim()}</strong> already has entries. These items will be added to it.</>
-              : 'The ref no. and date apply to every item below.'}
+              : 'The ref no., date and owner apply to every item below.'}
           </span>
 
           <div className={styles.tableWrap} style={{ overflowX: 'auto' }}>
@@ -244,200 +306,341 @@ function StockInModal({ storeId, onClose, onDone }) {
   )
 }
 
-// ── Stock Out (Transfer) Modal ─────────────────────────────────────────────
+// ── Transfer / Stock out Modal ─────────────────────────────────────────────
+// Same layout as Stock in: one ref no., date and destination, then item lines.
+// Transfer moves stock to another store; Stock out takes it out of the inventory
+// as used (project / field) or issued (external party).
 const NEW_RECIPIENT_VALUE = '__new_recipient__'
+const NEW_PROJECT_VALUE = '__new_project__'
+
+const DESTINATION_LABEL = {
+  store: 'Another store',
+  project: 'Project (field use)',
+  external: 'External party',
+}
+
+const TRANSFER_DESTINATIONS = ['store']
+const STOCK_OUT_DESTINATIONS = ['project', 'external']
+export const ISSUE_DESTINATIONS = ['store', 'project', 'external']
+
+function blankMoveLine(entryId = '') {
+  return { key: ++lineKey, entryId, quantity: '' }
+}
 
 // Also used by Manage Products to issue from the opening balance
-export function StockOutModal({ store, allStores, onClose, onDone, initialItemId = '' }) {
-  const [mode, setMode] = useState('store') // 'store' | 'external'
-  const [selectedItemId, setSelectedItemId] = useState(initialItemId)
+export function StockMoveModal({ title, destinations, store, allStores, onClose, onDone, initialItemId = '', allowNext = true }) {
+  const router = useRouter()
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const [destType, setDestType] = useState(destinations[0])
   const [targetStoreId, setTargetStoreId] = useState('')
+  const [projects, setProjects] = useState([])
+  const [projectId, setProjectId] = useState('')
+  const [newProjectName, setNewProjectName] = useState('')
+  const [newProjectLocation, setNewProjectLocation] = useState('')
   const [recipients, setRecipients] = useState([])
   const [recipientId, setRecipientId] = useState('')
   const [newRecipientName, setNewRecipientName] = useState('')
   const [newRecipientCompany, setNewRecipientCompany] = useState('')
-  const [quantity, setQuantity] = useState('')
-  const [entryDate, setEntryDate] = useState('')
+  const [refNo, setRefNo] = useState('')
+  const [entryDate, setEntryDate] = useState(todayStr)
+  const [lines, setLines] = useState(() => [blankMoveLine(initialItemId)])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [saved, setSaved] = useState('')
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const needsProjects = destinations.includes('project')
+  const needsRecipients = destinations.includes('external')
   useEffect(() => {
-    fetch('/api/recipients')
-      .then(res => res.json())
-      .then(data => setRecipients(Array.isArray(data) ? data : []))
-      .catch(() => setRecipients([]))
-  }, [])
+    if (needsProjects) {
+      fetch('/api/projects')
+        .then(res => res.json())
+        .then(data => setProjects(Array.isArray(data) ? data : []))
+        .catch(() => setProjects([]))
+    }
+    if (needsRecipients) {
+      fetch('/api/recipients')
+        .then(res => res.json())
+        .then(data => setRecipients(Array.isArray(data) ? data : []))
+        .catch(() => setRecipients([]))
+    }
+  }, [needsProjects, needsRecipients])
 
-  const selectedItem = store.items.find(i => i.id === selectedItemId)
+  const refExists = useRefExists(refNo)
+  const itemsById = Object.fromEntries(store.items.map(i => [i.id, i]))
+  const filled = lines.filter(l => l.entryId || l.quantity !== '')
+  const total = lines.reduce((s, l) => s + (itemsById[l.entryId]?.rate ?? 0) * (parseFloat(l.quantity) || 0), 0)
 
-  async function submit() {
-    // if (!selectedItemId || !quantity) {
-    //   setError('Item and quantity are required.'); return
-    // }
-    if (!selectedItemId || !quantity || !entryDate) {
-      setError('Item, quantity, and date are required.'); return
-    }
-    if (mode === 'store' && !targetStoreId) {
-      setError('Select a destination store.'); return
-    }
-    if (mode === 'external' && !recipientId) {
-      setError('Select a recipient, or choose "+ New recipient".'); return
-    }
-    if (mode === 'external' && recipientId === NEW_RECIPIENT_VALUE && !newRecipientName.trim()) {
-      setError('Enter the recipient\'s name.'); return
-    }
-    if (parseFloat(quantity) > selectedItem?.quantity) {
-      setError(`Only ${selectedItem.quantity} ${selectedItem.unit} available.`); return
-    }
+  function setLine(key, field, val) {
+    setLines(ls => ls.map(l => (l.key === key ? { ...l, [field]: val } : l)))
+  }
 
-    setLoading(true); setError('')
+  function removeLine(key) {
+    setLines(ls => (ls.length > 1 ? ls.filter(l => l.key !== key) : ls))
+  }
+
+  function itemLabel(item) {
+    const owner = item.owner && item.owner !== '—' ? ` · ${item.owner}` : ''
+    return `${item.name}${owner} — ${fmt(item.quantity)} ${item.unit} available`
+  }
+
+  async function submit(keepOpen) {
+    if (filled.length === 0) { setError('Add at least one item.'); return }
+    const bad = filled.find(l => !l.entryId || !(parseFloat(l.quantity) > 0))
+    if (bad) { setError(`Line ${lines.indexOf(bad) + 1}: select an item and enter a quantity greater than 0.`); return }
+
+    // The same row can appear on several lines; together they can't exceed what's available
+    const wanted = {}
+    filled.forEach(l => { wanted[l.entryId] = (wanted[l.entryId] ?? 0) + parseFloat(l.quantity) })
+    const short = Object.entries(wanted).find(([id, qty]) => qty > itemsById[id].quantity)
+    if (short) {
+      const item = itemsById[short[0]]
+      setError(`Only ${fmt(item.quantity)} ${item.unit} of ${item.name} available.`); return
+    }
+    if (!entryDate) { setError('Select a date.'); return }
+    if (destType === 'store' && !targetStoreId) { setError('Select the destination store.'); return }
+    if (destType === 'project' && !projectId) { setError('Select a project, or choose "+ New project".'); return }
+    if (destType === 'project' && projectId === NEW_PROJECT_VALUE && !newProjectName.trim()) { setError('Enter the project name.'); return }
+    if (destType === 'external' && !recipientId) { setError('Select a recipient, or choose "+ New recipient".'); return }
+    if (destType === 'external' && recipientId === NEW_RECIPIENT_VALUE && !newRecipientName.trim()) { setError('Enter the recipient\'s name.'); return }
+
+    setLoading(true); setError(''); setSaved('')
     try {
-      let finalRecipientId = recipientId
-
-      if (mode === 'external' && recipientId === NEW_RECIPIENT_VALUE) {
-        const rRes = await fetch('/api/recipients', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: newRecipientName.trim(), company: newRecipientCompany.trim() }),
-        })
-        const rData = await rRes.json()
-        if (!rRes.ok) throw new Error(rData.error || 'Unable to create recipient')
-        finalRecipientId = rData.id
-      }
-
       const body = {
         sourceStoreId: store.id,
-        productId: selectedItem.productId,
-        quantity: parseFloat(quantity),
-        entryDate: entryDate || undefined, 
+        refNo: refNo.trim() || null,
+        entryDate,
+        items: filled.map(l => ({ entryId: l.entryId, quantity: parseFloat(l.quantity) })),
       }
-      if (mode === 'store') body.targetStoreId = targetStoreId
-      else body.recipientId = finalRecipientId
 
-      const res = await fetch('/api/transfers', {
+      if (destType === 'store') {
+        body.targetStoreId = targetStoreId
+      } else if (destType === 'project') {
+        body.projectId = projectId
+        if (projectId === NEW_PROJECT_VALUE) {
+          const project = await createRecord('/api/projects', { name: newProjectName.trim(), location: newProjectLocation.trim() }, 'Unable to create project')
+          setProjects(list => [...list, project].sort((a, b) => a.name.localeCompare(b.name)))
+          setProjectId(project.id)
+          setNewProjectName(''); setNewProjectLocation('')
+          body.projectId = project.id
+        }
+      } else {
+        body.recipientId = recipientId
+        if (recipientId === NEW_RECIPIENT_VALUE) {
+          const recipient = await createRecord('/api/recipients', { name: newRecipientName.trim(), company: newRecipientCompany.trim() }, 'Unable to create recipient')
+          setRecipients(list => [...list, recipient].sort((a, b) => a.name.localeCompare(b.name)))
+          setRecipientId(recipient.id)
+          setNewRecipientName(''); setNewRecipientCompany('')
+          body.recipientId = recipient.id
+        }
+      }
+
+      const res = await apiFetch('/api/transfers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      onDone()
+      if (!keepOpen) { onDone(); return }
+
+      setSaved(`Saved ${data.count} item${data.count === 1 ? '' : 's'}${data.refNo ? ` under ${data.refNo}` : ''}. Enter the next ref no.`)
+      setRefNo('')
+      setLines([blankMoveLine()])
+      setLoading(false)
+      router.refresh()
     } catch (e) {
       setError(e.message)
       setLoading(false)
     }
   }
 
+  const note = destType === 'store'
+    ? <>Stock moves from <strong>{store.name}</strong> to the destination store. The total inventory doesn&apos;t change.</>
+    : destType === 'project'
+      ? <>Stock leaves the inventory and is recorded as <strong>used</strong> on the project. It appears under Field records.</>
+      : <>Stock leaves the inventory and is recorded as <strong>issued</strong> to the external party.</>
+
   return (
-    <div className={styles.backdrop} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={styles.modal}>
+    <div className={styles.backdrop}>
+      <div className={`${styles.modal} ${styles.modalWide}`}>
         <div className={styles.modalHeader}>
-          <h3>Stock out</h3>
+          <h3>{title}</h3>
           <button className={styles.closeBtn} onClick={onClose}><i className="ti ti-x" /></button>
         </div>
 
         <div className={styles.modalBody}>
-          <div className={styles.field}>
-            <label>Source store</label>
-            <input value={store.name} disabled className={styles.disabledInput} />
-          </div>
-
-          <div className={styles.field}>
-            <label>Send to</label>
-            <select value={mode} onChange={e => { setMode(e.target.value); setTargetStoreId(''); setRecipientId('') }}>
-              <option value="store">Another store</option>
-              <option value="external">External party</option>
-            </select>
-          </div>
-
-          {mode === 'store' ? (
+          <div className={styles.fieldRow} style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
             <div className={styles.field}>
-              <label>Target store</label>
-              <select value={targetStoreId} onChange={e => setTargetStoreId(e.target.value)}>
-                <option value="">— select destination —</option>
-                {allStores.map(s => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.categoryName})</option>
-                ))}
-              </select>
+              <label>Ref no.</label>
+              <input
+                autoFocus
+                value={refNo}
+                onChange={e => { setRefNo(e.target.value); setSaved('') }}
+                placeholder="e.g. MIF-0042 (optional)"
+              />
             </div>
-          ) : (
             <div className={styles.field}>
-              <label>Recipient</label>
-              <select value={recipientId} onChange={e => setRecipientId(e.target.value)}>
-                <option value="">— select recipient —</option>
-                {recipients.map(r => (
-                  <option key={r.id} value={r.id}>{r.name}{r.company ? ` (${r.company})` : ''}</option>
-                ))}
-                <option value={NEW_RECIPIENT_VALUE}>+ New recipient…</option>
-              </select>
-              {recipientId === NEW_RECIPIENT_VALUE && (
-                <div className={styles.fieldRow} style={{ marginTop: 8 }}>
-                  <input
-                    autoFocus
-                    value={newRecipientName}
-                    onChange={e => setNewRecipientName(e.target.value)}
-                    placeholder="Recipient name"
-                  />
-                  <input
-                    value={newRecipientCompany}
-                    onChange={e => setNewRecipientCompany(e.target.value)}
-                    placeholder="Company (optional)"
-                  />
-                </div>
-              )}
+              <label>Date</label>
+              <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} max={todayStr} />
             </div>
-          )}
-
-          <div className={styles.field}>
-            <label>Item to transfer</label>
-            <select value={selectedItemId} onChange={e => { setSelectedItemId(e.target.value); setQuantity('') }}>
-              <option value="">— select item —</option>
-              {store.items.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.name} — {item.quantity} {item.unit} available
-                </option>
-              ))}
-            </select>
+            <div className={styles.field}>
+              <label>From</label>
+              <input value={store.name} disabled className={styles.disabledInput} />
+            </div>
           </div>
 
-          <div className={styles.field}>
-            <label>Quantity to transfer</label>
-            <input
-              type="number"
-              min="0"
-              max={selectedItem?.quantity}
-              value={quantity}
-              onChange={e => setQuantity(e.target.value)}
-              placeholder="0"
-              disabled={!selectedItemId}
-            />
-            {selectedItem && (
-              <span className={styles.fieldHint}>
-                Max: {selectedItem.quantity} {selectedItem.unit}
-              </span>
+          <div className={styles.fieldRow}>
+            {destinations.length > 1 && (
+              <div className={styles.field}>
+                <label>Send to</label>
+                <select value={destType} onChange={e => setDestType(e.target.value)}>
+                  {destinations.map(d => (
+                    <option key={d} value={d}>{DESTINATION_LABEL[d]}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {destType === 'store' && (
+              <div className={styles.field}>
+                <label>Destination store</label>
+                <select value={targetStoreId} onChange={e => setTargetStoreId(e.target.value)}>
+                  <option value="">— select store —</option>
+                  {allStores.filter(s => s.id !== store.id).map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.categoryName})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {destType === 'project' && (
+              <div className={styles.field}>
+                <label>Project</label>
+                <select value={projectId} onChange={e => setProjectId(e.target.value)}>
+                  <option value="">— select project —</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}{p.location ? ` (${p.location})` : ''}</option>
+                  ))}
+                  <option value={NEW_PROJECT_VALUE}>+ New project…</option>
+                </select>
+                {projectId === NEW_PROJECT_VALUE && (
+                  <div className={styles.fieldRow}>
+                    <input autoFocus value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Project name" />
+                    <input value={newProjectLocation} onChange={e => setNewProjectLocation(e.target.value)} placeholder="Site / location (optional)" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {destType === 'external' && (
+              <div className={styles.field}>
+                <label>Recipient</label>
+                <select value={recipientId} onChange={e => setRecipientId(e.target.value)}>
+                  <option value="">— select recipient —</option>
+                  {recipients.map(r => (
+                    <option key={r.id} value={r.id}>{r.name}{r.company ? ` (${r.company})` : ''}</option>
+                  ))}
+                  <option value={NEW_RECIPIENT_VALUE}>+ New recipient…</option>
+                </select>
+                {recipientId === NEW_RECIPIENT_VALUE && (
+                  <div className={styles.fieldRow}>
+                    <input autoFocus value={newRecipientName} onChange={e => setNewRecipientName(e.target.value)} placeholder="Recipient name" />
+                    <input value={newRecipientCompany} onChange={e => setNewRecipientCompany(e.target.value)} placeholder="Company (optional)" />
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          <div className={styles.field}>
-            <label>Date</label>
-            <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} max={todayStr} />
+
+          <span className={styles.fieldHint}>
+            {refExists
+              ? <>Ref no. <strong>{refNo.trim()}</strong> already has entries. These items will be added to it.</>
+              : 'The ref no., date and destination apply to every item below.'}
+          </span>
+
+          <div className={styles.tableWrap} style={{ overflowX: 'auto' }}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Item</th>
+                  <th>Qty</th>
+                  <th>Rate (UGX)</th>
+                  <th>Amount</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l, i) => {
+                  const item = itemsById[l.entryId]
+                  return (
+                    <tr key={l.key} className={styles.addRow}>
+                      <td className={styles.mono}>{i + 1}</td>
+                      <td style={{ minWidth: 260 }}>
+                        <select
+                          value={l.entryId}
+                          onChange={e => setLine(l.key, 'entryId', e.target.value)}
+                          className={styles.inlineSelect}
+                        >
+                          <option value="">{store.items.length ? '— select item —' : 'No stock in this store'}</option>
+                          {store.items.map(it => (
+                            <option key={it.id} value={it.id}>{itemLabel(it)}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          type="number" min="0" max={item?.quantity} placeholder="Qty"
+                          value={l.quantity} onChange={e => setLine(l.key, 'quantity', e.target.value)}
+                          className={styles.inlineInputSmall}
+                          disabled={!item}
+                        />
+                      </td>
+                      <td className={styles.mono}>{item ? fmt(item.rate) : '—'}</td>
+                      <td className={styles.mono}>{fmt((item?.rate ?? 0) * (parseFloat(l.quantity) || 0))}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                          title="Remove line"
+                          onClick={() => removeLine(l.key)}
+                          disabled={lines.length === 1}
+                        >
+                          <i className="ti ti-x" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <button type="button" className={styles.btnGhost} onClick={() => setLines(ls => [...ls, blankMoveLine()])}>
+              <i className="ti ti-plus" /> Add item
+            </button>
+            <span className={styles.mono}>Total: UGX {fmt(total)}</span>
           </div>
 
           <div className={styles.transferNote}>
             <i className="ti ti-info-circle" />
-            {mode === 'store'
-              ? <>Stock will be reduced from <strong>{store.name}</strong> and added to the destination store.</>
-              : <>Stock will be reduced from <strong>{store.name}</strong> and marked as issued to the recipient. It will no longer be tracked in any store.</>
-            }
+            <span>{note}</span>
           </div>
 
+          {saved && <p className={styles.fieldHint} style={{ color: 'var(--success)' }}>{saved}</p>}
           {error && <p className={styles.errorMsg}>{error}</p>}
         </div>
 
         <div className={styles.modalFooter}>
-          <button className={styles.btnGhost} onClick={onClose}>Cancel</button>
-          <button className={styles.btnPrimary} onClick={submit} disabled={loading}>
-            {loading ? 'Sending…' : 'Confirm'}
+          <button className={styles.btnGhost} onClick={onClose}>{saved ? 'Close' : 'Cancel'}</button>
+          {allowNext && (
+            <button className={styles.btnGhost} onClick={() => submit(true)} disabled={loading}>
+              Save &amp; next ref no.
+            </button>
+          )}
+          <button className={styles.btnPrimary} onClick={() => submit(false)} disabled={loading}>
+            {loading ? 'Saving…' : filled.length > 0 ? `Save ${filled.length} item${filled.length === 1 ? '' : 's'}` : 'Save'}
           </button>
         </div>
       </div>
@@ -488,7 +691,7 @@ function EditItemModal({ item, onClose, onDone }) {
         <div className={styles.modalBody}>
           <div className={styles.field}>
             <label>Product</label>
-            <input value={`${item.name} (${item.unit})`} disabled className={styles.disabledInput} />
+            <input value={`${item.name} (${item.unit})${item.owner !== '—' ? ` · owner: ${item.owner}` : ''}`} disabled className={styles.disabledInput} />
             <span className={styles.fieldHint}>
               To rename this product or change its unit, edit it in the Products section.
             </span>
@@ -585,7 +788,10 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
           <button className={styles.btnGhost} onClick={() => setModal('in')}>
             <i className="ti ti-arrow-bar-down" /> Stock in
           </button>
-          <button className={styles.btnPrimary} onClick={() => setModal('out')}>
+          <button className={styles.btnGhost} onClick={() => setModal('transfer')} title="Move stock to another store">
+            <i className="ti ti-transfer" /> Transfer
+          </button>
+          <button className={styles.btnPrimary} onClick={() => setModal('out')} title="Issue stock for use: project (field) or external party">
             <i className="ti ti-arrow-bar-up" /> Stock out
           </button>
         </div>
@@ -597,7 +803,7 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
           Inventory
         </button>
         <button className={`${styles.tab} ${tab === 'transfers' ? styles.tabActive : ''}`} onClick={() => setTab('transfers')}>
-          Transfer log
+          Movement log
           {transfers.length > 0 && <span className={styles.tabBadge}>{transfers.length}</span>}
         </button>
         <div className={styles.tabs}>
@@ -646,6 +852,7 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                   <thead>
                     <tr>
                       <th>Item</th>
+                      <th>Owner</th>
                       <th>Unit</th>
                       <th>Rate (UGX)</th>
                       <th>Added</th>
@@ -661,6 +868,7 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                     {store.items.map(item => (
                       <tr key={item.id}>
                         <td className={styles.itemName}>{item.name}</td>
+                        <td className={item.owner === '—' ? styles.fieldHint : undefined}>{item.owner}</td>
                         <td className={styles.mono}>{item.unit}</td>
                         <td className={styles.mono}>{fmt(item.rate)}</td>
                         <td className={styles.mono}>{fmt(item.totalAdded)}</td>
@@ -713,17 +921,20 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
             {transfers.length === 0 ? (
               <div className={styles.tableEmpty}>
                 <i className="ti ti-transfer" style={{ fontSize: 32, color: 'var(--text-muted)' }} />
-                <p>No transfers yet involving this store.</p>
+                <p>No stock movements yet involving this store.</p>
               </div>
             ) : (
               transfers.map(t => {
                 const isOut = t.sourceStoreId === store.id
                 const destinationLabel = t.targetStore
-                ? t.targetStore.name
-                : t.recipient
-                  ? `${t.recipient.name}${t.recipient.company ? ` (${t.recipient.company})` : ''}`
-                  : 'Unknown'
-                const destinationCat = t.targetStore ? t.targetStore.category.name : 'External'
+                  ? t.targetStore.name
+                  : t.project
+                    ? t.project.name
+                    : t.recipient
+                      ? `${t.recipient.name}${t.recipient.company ? ` (${t.recipient.company})` : ''}`
+                      : 'Unknown'
+                const destinationCat = t.targetStore ? t.targetStore.category.name : t.project ? 'Field (used)' : 'External'
+                const owner = t.owner && t.owner.id !== NO_OWNER ? ` · ${t.owner.name}` : ''
                 return (
                   <div key={t.id} className={styles.transferRow}>
                     <div className={`${styles.transferDir} ${isOut ? styles.dirOut : styles.dirIn}`}>
@@ -737,9 +948,12 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                         {t.sourceStore.category.name} → {destinationCat}
                       </span>
                     </div>
-                    <div className={styles.transferItem}>{t.product.name} · {t.product.unit.name}</div>
-                    <div className={styles.transferQty}>{fmt(t.quantity)} units</div>
-                    <div className={styles.transferTime}>{timeAgo(t.createdAt)}</div>
+                    <div className={styles.transferItem}>
+                      {t.product.name} · {t.product.unit.name}{owner}
+                      {t.refNo && <div className={styles.fieldHint}>Ref {t.refNo}</div>}
+                    </div>
+                    <div className={styles.transferQty}>{fmt(t.quantity)} {t.product.unit.name}</div>
+                    <div className={styles.transferTime}>{timeAgo(t.entryDate ?? t.createdAt)}</div>
                   </div>
                 )
               })
@@ -763,7 +977,10 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
               <tbody>
                 {store.deletedItems?.map(entry => (
                   <tr key={entry.id}>
-                    <td className={styles.itemName}>{entry.product.name}</td>
+                    <td className={styles.itemName}>
+                      {entry.product.name}
+                      {entry.ownerId !== NO_OWNER && <span className={styles.fieldHint}> · {entry.owner.name}</span>}
+                    </td>
                     <td className={styles.mono}>{entry.product.unit.name}</td>
                     <td className={styles.mono}>{fmt(entry.quantity)}</td>
                     <td className={styles.fieldHint}>{timeAgo(entry.deletedAt)}</td>
@@ -795,8 +1012,25 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
       {modal === 'in' && (
         <StockInModal storeId={store.id} onClose={() => setModal(null)} onDone={refresh} />
       )}
+      {modal === 'transfer' && (
+        <StockMoveModal
+          title="Transfer to another store"
+          destinations={TRANSFER_DESTINATIONS}
+          store={store}
+          allStores={allStores}
+          onClose={() => setModal(null)}
+          onDone={refresh}
+        />
+      )}
       {modal === 'out' && (
-        <StockOutModal store={store} allStores={allStores} onClose={() => setModal(null)} onDone={refresh} />
+        <StockMoveModal
+          title="Stock out"
+          destinations={STOCK_OUT_DESTINATIONS}
+          store={store}
+          allStores={allStores}
+          onClose={() => setModal(null)}
+          onDone={refresh}
+        />
       )}
       {modal?.edit && (
         <EditItemModal item={modal.edit} onClose={() => setModal(null)} onDone={refresh} />

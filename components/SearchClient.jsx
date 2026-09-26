@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/ConfirmProvider'
+import { NO_OWNER } from '@/lib/owners'
 import styles from '@/dashboard/store.module.css'
 
 function fmt(n) {
@@ -14,7 +15,18 @@ function fmtDate(date) {
   })
 }
 
-export default function SearchClient({ currentUser }) {
+function ownerName(owner) {
+  return owner && owner.id !== NO_OWNER ? owner.name : null
+}
+
+// Friendlier label for a log type; stock out to a project is "used", to an external party "issued"
+function kindLabel(log) {
+  if (log.kind === 'TRANSFER_OUT' && log.projectId) return 'USED'
+  if (log.kind === 'TRANSFER_OUT' && log.recipientId) return 'ISSUED'
+  return log.kind.replace('_', ' ')
+}
+
+export default function SearchClient({ currentUser, owners = [] }) {
   const router = useRouter()
   const { confirm, notify } = useConfirm()
   const [q, setQ] = useState('')
@@ -24,8 +36,32 @@ export default function SearchClient({ currentUser }) {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(false)
   const [clearError, setClearError] = useState('')
+  const [ownerFilter, setOwnerFilter] = useState('')
 
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN'
+
+  function searchUrl(term, owner = ownerFilter) {
+    const params = new URLSearchParams({ q: term })
+    if (owner) params.set('ownerId', owner)
+    return `/api/search?${params}`
+  }
+
+  // Re-run whatever is on screen for the newly chosen owner
+  async function changeOwner(owner) {
+    setOwnerFilter(owner)
+    const term = selected?.name ?? q.trim()
+    if (!term || (!selected && results.length === 0)) return
+    setLoading(true)
+    try {
+      const res = await fetch(searchUrl(term, owner))
+      const data = await res.json()
+      const list = Array.isArray(data) ? data : []
+      if (selected) setSelected(list.find(p => p.id === selected.id) ?? { ...selected, entries: [], logs: [] })
+      else setResults(list)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!q.trim() || q.trim().length < 2) {
@@ -34,21 +70,23 @@ export default function SearchClient({ currentUser }) {
     }
 
     const timer = setTimeout(() => {
-      fetch(`/api/search?q=${encodeURIComponent(q.trim())}`)
+      const params = new URLSearchParams({ q: q.trim() })
+      if (ownerFilter) params.set('ownerId', ownerFilter)
+      fetch(`/api/search?${params}`)
         .then(res => res.json())
         .then(data => setSuggestions(Array.isArray(data) ? data.slice(0, 6) : []))
         .catch(() => setSuggestions([]))
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [q])
+  }, [q, ownerFilter])
 
   async function runSearch(e) {
     e.preventDefault()
     if (!q.trim()) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q.trim())}`)
+      const res = await fetch(searchUrl(q.trim()))
       const data = await res.json()
       setResults(Array.isArray(data) ? data : [])
       setSelected(null)
@@ -91,6 +129,9 @@ export default function SearchClient({ currentUser }) {
   function buildTimeline(product) {
     const fromLogs = product.logs.map(l => ({
       kind: l.type,
+      projectId: l.projectId,
+      recipientId: l.recipientId,
+      owner: ownerName(l.owner),
       quantity: l.quantity,
       rate: l.rate,
       note: l.note,
@@ -117,7 +158,7 @@ export default function SearchClient({ currentUser }) {
           </button>
         </div> */}
 
-        <form onSubmit={runSearch} className={styles.field} style={{ maxWidth: 480, marginBottom: 24 }}>
+        <form onSubmit={runSearch} className={styles.field} style={{ maxWidth: 640, marginBottom: 24 }}>
           <label>Product name</label>
           <div style={{ position: 'relative' }}>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -127,6 +168,18 @@ export default function SearchClient({ currentUser }) {
                 onFocus={() => setShowSuggestions(true)}
                 placeholder="e.g. Book"
               />
+              <select
+                value={ownerFilter}
+                onChange={e => changeOwner(e.target.value)}
+                title="Filter by stock owner"
+                style={{ maxWidth: 180 }}
+              >
+                <option value="">All owners</option>
+                <option value={NO_OWNER}>No owner</option>
+                {owners.map(o => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
               <button type="submit" className={styles.btnPrimary} disabled={loading}>
                 {loading ? '…' : 'Search'}
               </button>
@@ -212,9 +265,10 @@ export default function SearchClient({ currentUser }) {
 
             <div className={styles.metrics} style={{ marginBottom: 24 }}>
               {selected.entries.map(entry => (
-                <div key={entry.store.id} className={styles.metric}>
+                <div key={entry.id} className={styles.metric}>
                   <div className={styles.metricLabel}>
                     {entry.store.category.isSystem ? entry.store.name : `${entry.store.name} (${entry.store.category.name})`}
+                    {ownerName(entry.owner) && <> · {ownerName(entry.owner)}</>}
                   </div>
                   <div className={styles.metricValue}>{fmt(entry.quantity)} {selected.unit.name}</div>
                 </div>
@@ -230,6 +284,7 @@ export default function SearchClient({ currentUser }) {
                   <tr>
                     <th>Type</th>
                     <th>Store</th>
+                    <th>Owner</th>
                     <th>Quantity</th>
                     <th>Rate</th>
                     <th>By</th>
@@ -245,10 +300,11 @@ export default function SearchClient({ currentUser }) {
                           entry.kind === 'IN' ? styles.badgeOk :
                           entry.kind === 'TRANSFER_OUT' ? styles.badgeLow : styles.badgeOk
                         }>
-                          {entry.kind.replace('_', ' ')}
+                          {kindLabel(entry)}
                         </span>
                       </td>
                       <td>{entry.store}</td>
+                      <td className={entry.owner ? undefined : styles.fieldHint}>{entry.owner || '—'}</td>
                       <td className={styles.mono}>{fmt(entry.quantity)}</td>
                       <td className={styles.mono}>{fmt(entry.rate)}</td>
                       <td className={styles.fieldHint}>{entry.user || '—'}</td>
@@ -257,7 +313,7 @@ export default function SearchClient({ currentUser }) {
                     </tr>
                   ))}
                   {buildTimeline(selected).length === 0 && (
-                    <tr><td colSpan={7} className={styles.fieldHint}>No movement recorded yet.</td></tr>
+                    <tr><td colSpan={8} className={styles.fieldHint}>No movement recorded yet.</td></tr>
                   )}
                 </tbody>
               </table>

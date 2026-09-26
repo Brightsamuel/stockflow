@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { NO_OWNER } from '@/lib/owners'
 import styles from '@/dashboard/store.module.css'
 
 function fmt(n) {
@@ -9,58 +10,148 @@ function fmt(n) {
 const SCOPE_STORE = 'store'
 const SCOPE_CATEGORY = 'category'
 const SCOPE_EXTERNAL = 'external'
+const SCOPE_FIELD = 'field'
 const SCOPE_REF = 'ref'
 
-export default function ReportBuilder({ categories }) {
-  const [scope, setScope] = useState(SCOPE_STORE)
+const TYPE_LABEL = { IN: 'In', TRANSFER_IN: 'Transfer in', TRANSFER_OUT: 'Out', EDIT: 'Edit', DELETE: 'Removed', RESTORE: 'Restored' }
+const KIND_BADGE = { Receipt: 'badgeOk', Issue: 'badgeLow', Transfer: 'pill' }
+
+const dateCol = label => ({ label, value: r => new Date(r.date).toLocaleDateString(), mono: true })
+
+// Columns per report type, shared by the on-screen table and the PDF / Excel exports.
+// num: numeric (right-aligned, formatted); total: summed in the footer.
+function columnsFor(scope) {
+  const owner = { label: 'Owner', value: r => r.ownerName ?? r.owner }
+  switch (scope) {
+    case SCOPE_STORE:
+    case SCOPE_CATEGORY:
+      return [
+        ...(scope === SCOPE_CATEGORY ? [{ label: 'Store', value: r => r.storeName }] : []),
+        { label: 'Product', value: r => r.productName, strong: true },
+        owner,
+        { label: 'Unit', value: r => r.unit, mono: true },
+        { label: 'Opening', value: r => r.opening, num: true, total: true },
+        { label: 'Added', value: r => r.added, num: true, total: true },
+        { label: 'Deducted', value: r => r.deducted, num: true, total: true },
+        { label: 'Closing', value: r => r.closing, num: true, total: true },
+      ]
+    case SCOPE_EXTERNAL:
+      return [
+        dateCol('Date'),
+        { label: 'Ref no.', value: r => r.refNo || '—', mono: true },
+        { label: 'Recipient', value: r => r.recipientName },
+        { label: 'Company', value: r => r.recipientCompany || '—', hint: true },
+        { label: 'Product', value: r => r.product, strong: true },
+        owner,
+        { label: 'Unit', value: r => r.unit, mono: true },
+        { label: 'Qty', value: r => r.quantity, num: true },
+        { label: 'From store', value: r => r.store },
+        { label: 'Issued by', value: r => r.issuedBy || '—', hint: true },
+      ]
+    case SCOPE_FIELD:
+      return [
+        dateCol('Date'),
+        { label: 'Ref no.', value: r => r.refNo || '—', mono: true },
+        { label: 'Project', value: r => r.project },
+        { label: 'From store', value: r => r.store },
+        { label: 'Product', value: r => r.product, strong: true },
+        owner,
+        { label: 'Unit', value: r => r.unit, mono: true },
+        { label: 'Qty', value: r => r.quantity, num: true },
+        { label: 'Rate', value: r => r.rate, num: true },
+        { label: 'Value (UGX)', value: r => r.value, num: true, total: true },
+        { label: 'Issued by', value: r => r.issuedBy || '—', hint: true },
+      ]
+    default:
+      return [
+        { label: 'Product', value: r => r.product, strong: true },
+        owner,
+        { label: 'Unit', value: r => r.unit, mono: true },
+        { label: 'Type', value: r => TYPE_LABEL[r.type] ?? r.type },
+        { label: 'Qty', value: r => r.quantity, num: true },
+        { label: 'Rate', value: r => r.rate, num: true },
+        { label: 'Amount', value: r => r.value, num: true, total: true },
+        { label: 'Store', value: r => r.store },
+        { label: 'Note', value: r => r.note || '—', hint: true },
+        { label: 'By', value: r => r.addedBy || '—', hint: true },
+        { label: 'Date', value: r => new Date(r.date).toLocaleString(), mono: true },
+      ]
+  }
+}
+
+const EMPTY_TEXT = {
+  [SCOPE_STORE]: 'No activity in this period.',
+  [SCOPE_CATEGORY]: 'No activity in this period.',
+  [SCOPE_EXTERNAL]: 'No issues to external parties in this period.',
+  [SCOPE_FIELD]: 'No stock used on projects in this period.',
+  [SCOPE_REF]: 'No entries found for this ref no.',
+}
+
+const SUBTITLE = {
+  [SCOPE_STORE]: 'Single store',
+  [SCOPE_CATEGORY]: 'Category-wide',
+  [SCOPE_EXTERNAL]: 'Issued to external parties',
+  [SCOPE_FIELD]: 'Stock used on projects (field records)',
+}
+
+// Footer row: "Total" in the first column, sums under columns marked total
+function totalsRow(cols, rows) {
+  if (!rows.length || !cols.some(c => c.total)) return null
+  return cols.map((c, i) => {
+    if (c.total) return rows.reduce((s, r) => s + (Number(c.value(r)) || 0), 0)
+    return i === 0 ? 'Total' : ''
+  })
+}
+
+export default function ReportBuilder({ categories, owners = [], projects = [], initialScope = SCOPE_STORE }) {
+  const [scope, setScope] = useState(initialScope)
   const [categoryId, setCategoryId] = useState('')
   const [storeId, setStoreId] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [ownerFilter, setOwnerFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
   const [refNoInput, setRefNoInput] = useState('')
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [recipients, setRecipients] = useState([])
   const [recipientFilter, setRecipientFilter] = useState('')
-  const [receipts, setReceipts] = useState([])
-  const [showReceipts, setShowReceipts] = useState(false)
-
-  useEffect(() => {
-  fetch('/api/recipients')
-    .then(res => res.json())
-    .then(data => setRecipients(Array.isArray(data) ? data : []))
-    .catch(() => setRecipients([]))
-  }, [])
-
+  const [refList, setRefList] = useState([])
+  const [showRefList, setShowRefList] = useState(false)
   const [settings, setSettings] = useState(null)
 
-    useEffect(() => {
-      fetch('/api/settings').then(res => res.json()).then(setSettings).catch(() => {})
-    }, [])
+  useEffect(() => {
+    fetch('/api/recipients')
+      .then(res => res.json())
+      .then(data => setRecipients(Array.isArray(data) ? data : []))
+      .catch(() => setRecipients([]))
+    fetch('/api/settings').then(res => res.json()).then(setSettings).catch(() => {})
+  }, [])
+
+  // Ref no. suggestions follow what's typed; an empty box lists the most recent ones
+  useEffect(() => {
+    if (scope !== SCOPE_REF || !showRefList) return undefined
+    const timer = setTimeout(() => {
+      const q = refNoInput.trim()
+      fetch(`/api/receipts${q ? `?q=${encodeURIComponent(q)}` : ''}`)
+        .then(res => res.json())
+        .then(data => setRefList(Array.isArray(data) ? data : []))
+        .catch(() => setRefList([]))
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [scope, refNoInput, showRefList])
 
   const allStores = categories.flatMap(c => c.stores.map(s => ({ ...s, categoryId: c.id, categoryName: c.name })))
+  const ownerName = ownerFilter === NO_OWNER ? 'No owner' : owners.find(o => o.id === ownerFilter)?.name
 
-  async function generate(e) {
-    e.preventDefault()
-    if (scope !== SCOPE_REF && (!from || !to)) { setError('Both dates are required.'); return }
-    if (scope === SCOPE_STORE && !storeId) { setError('Select a store.'); return }
-    if (scope === SCOPE_CATEGORY && !categoryId) { setError('Select a category.'); return }
-    if (scope === SCOPE_REF && !refNoInput.trim()) { setError('Enter a ref no.'); return }
-
+  async function fetchReport(params) {
     setLoading(true); setError(''); setReport(null)
     try {
-      const params = new URLSearchParams({ from, to })
-      if (scope === SCOPE_REF) {
-        params.set('refNo', refNoInput.trim())
-      } else if (scope === SCOPE_STORE) params.set('storeId', storeId)
-      else if (scope === SCOPE_CATEGORY) params.set('categoryId', categoryId)
-      else params.set('external', recipientFilter || 'true')
-
       const res = await fetch(`/api/reports?${params}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setReport(data)
+      setReport({ ...data, ownerName: data.scope === SCOPE_REF ? null : ownerName })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -68,18 +159,48 @@ export default function ReportBuilder({ categories }) {
     }
   }
 
-  const totals = report?.rows.reduce((acc, r) => ({
-    opening: acc.opening + r.opening,
-    added: acc.added + r.added,
-    deducted: acc.deducted + r.deducted,
-    closing: acc.closing + r.closing,
-  }), { opening: 0, added: 0, deducted: 0, closing: 0 })
+  function generate(e) {
+    e.preventDefault()
+    if (scope !== SCOPE_REF && (!from || !to)) { setError('Both dates are required.'); return }
+    if (scope === SCOPE_STORE && !storeId) { setError('Select a store.'); return }
+    if (scope === SCOPE_CATEGORY && !categoryId) { setError('Select a category.'); return }
+    if (scope === SCOPE_REF && !refNoInput.trim()) { setError('Enter a ref no.'); return }
+
+    if (scope === SCOPE_REF) {
+      setShowRefList(false)
+      fetchReport(new URLSearchParams({ refNo: refNoInput.trim() }))
+      return
+    }
+
+    const params = new URLSearchParams({ from, to })
+    if (scope === SCOPE_STORE) params.set('storeId', storeId)
+    else if (scope === SCOPE_CATEGORY) params.set('categoryId', categoryId)
+    else if (scope === SCOPE_FIELD) params.set('project', projectFilter || 'true')
+    else params.set('external', recipientFilter || 'true')
+    if (ownerFilter) params.set('ownerId', ownerFilter)
+    fetchReport(params)
+  }
+
+  function pickRef(refNo) {
+    setRefNoInput(refNo)
+    setShowRefList(false)
+    fetchReport(new URLSearchParams({ refNo }))
+  }
+
+  const cols = report ? columnsFor(report.scope) : []
+  const footer = report ? totalsRow(cols, report.rows) : null
+  const subtitle = report && report.scope !== SCOPE_REF
+    ? [`${report.from} to ${report.to}`, SUBTITLE[report.scope], report.ownerName && `Owner: ${report.ownerName}`].filter(Boolean).join(' · ')
+    : ''
+  const fileBase = !report ? '' : report.scope === SCOPE_REF
+    ? `receipt-${report.refNo || 'unknown'}`
+    : `${report.scope === SCOPE_FIELD ? 'field-records' : 'report'}-${report.from}-to-${report.to}`
 
   async function exportPdf() {
     const { jsPDF } = await import('jspdf')
     const autoTable = (await import('jspdf-autotable')).default
 
-    const doc = new jsPDF()
+    const doc = new jsPDF({ orientation: cols.length > 8 ? 'landscape' : 'portrait' })
     let y = 15
 
     if (settings?.companyName) {
@@ -98,106 +219,34 @@ export default function ReportBuilder({ categories }) {
     doc.setFontSize(12)
     doc.text(report.label, 14, y)
     y += 6
-    doc.setFontSize(9)
-    doc.setTextColor(100)
-    // handle missing from/to for ref reports by deriving range from rows
-    let fromText = report.from
-    let toText = report.to
-    if ((!fromText || !toText) && Array.isArray(report.rows) && report.rows.length > 0) {
-      const dates = report.rows.map(r => new Date(r.date)).filter(d => !isNaN(d))
-      if (dates.length) {
-        const min = new Date(Math.min(...dates.map(d => d.getTime())))
-        const max = new Date(Math.max(...dates.map(d => d.getTime())))
-        fromText = fromText || min.toLocaleDateString()
-        toText = toText || max.toLocaleDateString()
-      }
+    if (subtitle) {
+      doc.setFontSize(9)
+      doc.setTextColor(100)
+      doc.text(subtitle, 14, y)
+      doc.setTextColor(0)
+      y += 6
     }
-    const rangeText = report.scope === 'ref' ? '' : (fromText || '') + (toText ? ` to ${toText}` : '')
-    if (rangeText) doc.text(rangeText, 14, y)
-    doc.setTextColor(0) //doc color
-    y += 6
 
-    const numericStyle = { halign: 'right' }
-
-    if (report.scope === 'external') {
-      autoTable(doc, {
-        startY: y,
-        head: [['Date', 'Recipient', 'Company', 'Product', 'Unit', 'Qty', 'From store', 'Issued by']],
-        body: report.rows.map(r => [
-          new Date(r.date).toLocaleDateString(),
-          r.recipientName,
-          r.recipientCompany || '—',
-          r.product,
-          r.unit,
-          fmt(r.quantity),
-          r.store,
-          r.issuedBy || '—',
-        ]),
-        theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
-        headStyles: { fillColor: [40, 40, 40], textColor: 255, halign: 'left' },
-        columnStyles: { 5: numericStyle },
-      })
-    } else if (report.scope === 'ref') {
-      autoTable(doc, {
-        startY: y,
-        head: [['Product', 'Unit', 'Type', 'Qty', 'Rate', 'Store', 'Added by', 'Date']],
-        body: report.rows.map(r => [
-          r.product,
-          r.unit,
-          r.type,
-          fmt(r.quantity),
-          fmt(r.rate),
-          r.store,
-          r.addedBy || '—',
-          new Date(r.date).toLocaleString(),
-        ]),
-        theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
-        headStyles: { fillColor: [40, 40, 40], textColor: 255, halign: 'left' },
-        columnStyles: { 3: numericStyle, 4: numericStyle },
+    const numeric = { halign: 'right' }
+    autoTable(doc, {
+      startY: y,
+      head: [cols.map(c => c.label)],
+      body: report.rows.map(r => cols.map(c => (c.num ? fmt(c.value(r)) : c.value(r)))),
+      foot: footer ? [footer.map(v => (typeof v === 'number' ? fmt(v) : v))] : undefined,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
+      headStyles: { fillColor: [40, 40, 40], textColor: 255, halign: 'left' },
+      footStyles: { fillColor: [230, 230, 230], textColor: 0, fontStyle: 'bold' },
+      columnStyles: Object.fromEntries(cols.flatMap((c, i) => (c.num ? [[i, numeric]] : []))),
     })
-    } else {
-      const head = report.scope === 'category'
-        ? [['Store', 'Product', 'Unit', 'Opening', 'Added', 'Deducted', 'Closing']]
-        : [['Product', 'Unit', 'Opening', 'Added', 'Deducted', 'Closing']]
 
-      const body = report.rows.map(r => {
-        const row = report.scope === 'category' ? [r.storeName] : []
-        return [...row, r.productName, r.unit, fmt(r.opening), fmt(r.added), fmt(r.deducted), fmt(r.closing)]
-      })
-
-      const numericCols = report.scope === 'category' ? [3, 4, 5, 6] : [2, 3, 4, 5]
-      const columnStyles = Object.fromEntries(numericCols.map(i => [i, numericStyle]))
-
-      autoTable(doc, {
-        startY: y,
-        head,
-        body,
-        theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
-        headStyles: { fillColor: [40, 40, 40], textColor: 255, halign: 'left' },
-        columnStyles,
-        foot: report.rows.length > 0 ? [(() => {
-          const totals = report.rows.reduce((acc, r) => ({
-            opening: acc.opening + r.opening, added: acc.added + r.added,
-            deducted: acc.deducted + r.deducted, closing: acc.closing + r.closing,
-          }), { opening: 0, added: 0, deducted: 0, closing: 0 })
-          const row = report.scope === 'category' ? ['', 'Total'] : ['Total']
-          return [...row, ...(report.scope === 'category' ? [''] : ['']), fmt(totals.opening), fmt(totals.added), fmt(totals.deducted), fmt(totals.closing)]
-        })()] : undefined,
-        footStyles: { fillColor: [230, 230, 230], textColor: 0, fontStyle: 'bold' },
-      })
-    }
-
-    const filename = report.scope === 'ref' ? `receipt-${report.refNo || 'unknown'}.pdf` : `report-${report.from || 'n-a'}-to-${report.to || 'n-a'}.pdf`
-    doc.save(filename)
+    doc.save(`${fileBase}.pdf`)
   }
 
   async function exportExcel() {
     const XLSX = await import('xlsx')
 
-    let headerRows = []
+    const headerRows = []
     if (settings?.companyName) {
       headerRows.push([settings.companyName])
       if (settings.address) headerRows.push([settings.address])
@@ -206,46 +255,29 @@ export default function ReportBuilder({ categories }) {
       headerRows.push([])
     }
     headerRows.push([report.label])
-    if (report.scope !== 'ref') headerRows.push([`${report.from} to ${report.to}`])
+    if (subtitle) headerRows.push([subtitle])
     headerRows.push([])
 
-    let cols, rows
-    if (report.scope === 'external') {
-      cols = ['Date', 'Recipient', 'Company', 'Product', 'Unit', 'Qty', 'From store', 'Issued by']
-      rows = report.rows.map(r => [
-        new Date(r.date).toLocaleDateString(), r.recipientName, r.recipientCompany || '',
-        r.product, r.unit, r.quantity, r.store, r.issuedBy || '',
-      ])
-    } else if (report.scope === 'ref') {
-      cols = ['Product', 'Unit', 'Type', 'Qty', 'Rate', 'Store', 'Added by', 'Date']
-      rows = report.rows.map(r => [
-        r.product, r.unit, r.type, r.quantity, r.rate, r.store, r.addedBy || '', new Date(r.date).toLocaleString(),
-      ])
-    } else {
-      cols = report.scope === 'category'
-        ? ['Store', 'Product', 'Unit', 'Opening', 'Added', 'Deducted', 'Closing']
-        : ['Product', 'Unit', 'Opening', 'Added', 'Deducted', 'Closing']
-      rows = report.rows.map(r => {
-        const row = report.scope === 'category' ? [r.storeName] : []
-        return [...row, r.productName, r.unit, r.opening, r.added, r.deducted, r.closing]
-      })
-    }
-
-    const sheetData = [...headerRows, cols, ...rows]
+    const rows = report.rows.map(r => cols.map(c => c.value(r)))
+    const sheetData = [...headerRows, cols.map(c => c.label), ...rows, ...(footer ? [footer] : [])]
     const ws = XLSX.utils.aoa_to_sheet(sheetData)
     ws['!cols'] = cols.map(() => ({ wch: 16 }))
 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Report')
-    XLSX.writeFile(wb, `report-${report.from || report.refNo}-${report.to || ''}.xlsx`)
+    XLSX.writeFile(wb, `${fileBase}.xlsx`)
   }
+
+  const isField = scope === SCOPE_FIELD
 
   return (
     <>
       <div className={styles.topbar} data-no-print="true">
         <div className={styles.topbarLeft}>
-          <h2 className={styles.storeName}>Reports</h2>
-          <span className={styles.storeMeta}>Opening/closing balance in a given period</span>
+          <h2 className={styles.storeName}>{isField ? 'Field records' : 'Reports'}</h2>
+          <span className={styles.storeMeta}>
+            {isField ? 'Stock used on projects in a given period' : 'Opening/closing balance in a given period'}
+          </span>
         </div>
         {report && (
           <div className={styles.topbarActions}>
@@ -263,19 +295,26 @@ export default function ReportBuilder({ categories }) {
       </div>
 
       <div className={styles.content}>
-        <form onSubmit={generate} className={styles.field} style={{ maxWidth: 560, marginBottom: 24 }} data-no-print="true">
+        <form onSubmit={generate} className={styles.field} style={{ maxWidth: 640, marginBottom: 24 }} data-no-print="true">
           <div className={styles.fieldRow}>
             <div className={styles.field}>
               <label>Report for</label>
-              <select value={scope} onChange={e => { setScope(e.target.value); setStoreId(''); setCategoryId(''); setRecipientFilter('') }}>
+              <select
+                value={scope}
+                onChange={e => {
+                  setScope(e.target.value); setStoreId(''); setCategoryId(''); setRecipientFilter(''); setProjectFilter('')
+                  setShowRefList(false); setReport(null); setError('')
+                }}
+              >
                 <option value={SCOPE_STORE}>A single store</option>
                 <option value={SCOPE_CATEGORY}>A whole category</option>
+                <option value={SCOPE_FIELD}>Field records (used on projects)</option>
                 <option value={SCOPE_EXTERNAL}>External recipients</option>
                 <option value={SCOPE_REF}>Lookup by Ref No.</option>
               </select>
             </div>
 
-            {scope === SCOPE_STORE ? (
+            {scope === SCOPE_STORE && (
               <div className={styles.field}>
                 <label>Store</label>
                 <select value={storeId} onChange={e => setStoreId(e.target.value)}>
@@ -285,7 +324,9 @@ export default function ReportBuilder({ categories }) {
                   ))}
                 </select>
               </div>
-            ) : scope === SCOPE_CATEGORY ? (
+            )}
+
+            {scope === SCOPE_CATEGORY && (
               <div className={styles.field}>
                 <label>Category</label>
                 <select value={categoryId} onChange={e => setCategoryId(e.target.value)}>
@@ -295,62 +336,21 @@ export default function ReportBuilder({ categories }) {
                   ))}
                 </select>
               </div>
-            ) : scope === SCOPE_REF ? (
+            )}
+
+            {scope === SCOPE_FIELD && (
               <div className={styles.field}>
-                <label>Ref No.</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input value={refNoInput} onChange={e => setRefNoInput(e.target.value)} placeholder="e.g. RCT-0091" />
-                  <button type="button" className={styles.btnGhost} onClick={async () => {
-                    const next = !showReceipts
-                    setShowReceipts(next)
-                    if (next && receipts.length === 0) {
-                      try {
-                        const res = await fetch('/api/receipts')
-                        const data = await res.json()
-                        setReceipts(Array.isArray(data) ? data : [])
-                      } catch (e) {
-                        setReceipts([])
-                      }
-                    }
-                  }}>{showReceipts ? 'Close' : 'Browse receipts'}</button>
-                </div>
-                {showReceipts && (
-                  <div style={{ marginTop: 8, maxHeight: 200, overflow: 'auto', border: '0.5px solid rgba(255,255,255,0.06)', borderRadius: 6, padding: 8 }}>
-                    {receipts.length === 0 ? (
-                      <div className={styles.fieldHint}>No receipts found.</div>
-                    ) : (
-                      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                        {receipts.map(r => (
-                          <li key={r.id} style={{ padding: '6px 4px', borderBottom: '0.5px solid rgba(255,255,255,0.03)' }}>
-                            <button type="button" className={styles.btnGhost} style={{ width: '100%', textAlign: 'left' }} onClick={async () => {
-                              setRefNoInput(r.refNo);
-                              setShowReceipts(false);
-                              setLoading(true); setError(''); setReport(null);
-                              try {
-                                const params = new URLSearchParams({ refNo: r.refNo })
-                                const res = await fetch(`/api/reports?${params}`)
-                                const data = await res.json()
-                                if (!res.ok) throw new Error(data.error)
-                                setReport(data)
-                              } catch (err) {
-                                setError(err.message)
-                              } finally {
-                                setLoading(false)
-                              }
-                            }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <span>{r.refNo}</span>
-                                <span className={styles.fieldHint}>{new Date(r.createdAt).toLocaleString()}</span>
-                              </div>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
+                <label>Project</label>
+                <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)}>
+                  <option value="">All projects</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}{p.location ? ` (${p.location})` : ''}</option>
+                  ))}
+                </select>
               </div>
-            ) : (
+            )}
+
+            {scope === SCOPE_EXTERNAL && (
               <div className={styles.field}>
                 <label>Recipient</label>
                 <select value={recipientFilter} onChange={e => setRecipientFilter(e.target.value)}>
@@ -361,18 +361,74 @@ export default function ReportBuilder({ categories }) {
                 </select>
               </div>
             )}
+
+            {scope === SCOPE_REF && (
+              <div className={styles.field} style={{ position: 'relative' }}>
+                <label>Ref No.</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    value={refNoInput}
+                    onChange={e => { setRefNoInput(e.target.value); setShowRefList(true) }}
+                    onFocus={() => setShowRefList(true)}
+                    onKeyDown={e => { if (e.key === 'Escape') setShowRefList(false) }}
+                    placeholder="Type to search, e.g. RCT-0091"
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" className={styles.btnGhost} onClick={() => setShowRefList(s => !s)}>
+                    {showRefList ? 'Close' : 'Browse'}
+                  </button>
+                </div>
+                {showRefList && (
+                  <div className={styles.suggestList}>
+                    {refList.length === 0 ? (
+                      <div className={styles.suggestEmpty}>
+                        {refNoInput.trim() ? `No ref nos. matching "${refNoInput.trim()}".` : 'No ref nos. recorded yet.'}
+                      </div>
+                    ) : refList.map(r => (
+                      <button
+                        type="button"
+                        key={r.id}
+                        className={styles.suggestItem}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => pickRef(r.refNo)}
+                      >
+                        <span className={styles.suggestTop}>
+                          <strong>{r.refNo}</strong>
+                          <span className={styles[KIND_BADGE[r.kind]]}>{r.kind}</span>
+                        </span>
+                        <span className={styles.fieldHint}>
+                          {new Date(r.date).toLocaleDateString()} · {r.items} item{r.items === 1 ? '' : 's'} · {r.preview}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className={styles.fieldRow} style={{ marginTop: 12 }}>
-            <div className={styles.field}>
-              <label>From</label>
-              <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
+          {scope !== SCOPE_REF && (
+            <div className={styles.fieldRow} style={{ marginTop: 12, gridTemplateColumns: '1fr 1fr 1fr' }}>
+              <div className={styles.field}>
+                <label>From</label>
+                <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
+              </div>
+              <div className={styles.field}>
+                <label>To</label>
+                <input type="date" value={to} onChange={e => setTo(e.target.value)} />
+              </div>
+              <div className={styles.field}>
+                <label>Stock owner</label>
+                <select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
+                  <option value="">All owners</option>
+                  <option value={NO_OWNER}>No owner</option>
+                  {owners.map(o => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className={styles.field}>
-              <label>To</label>
-              <input type="date" value={to} onChange={e => setTo(e.target.value)} />
-            </div>
-          </div>
+          )}
 
           {error && <p className={styles.errorMsg}>{error}</p>}
 
@@ -381,7 +437,7 @@ export default function ReportBuilder({ categories }) {
           </button>
         </form>
 
-        {report && report.scope === 'external' && (
+        {report && (
           <div id="report-printable">
             <div style={{ marginBottom: 16 }}>
               {settings?.companyName && (
@@ -395,142 +451,39 @@ export default function ReportBuilder({ categories }) {
                 </div>
               )}
               <h3 style={{ marginBottom: 4 }}>{report.label}</h3>
-              <p className={styles.storeMeta}>{report.from} to {report.to} · Issued to external parties</p>
+              {subtitle && <p className={styles.storeMeta}>{subtitle}</p>}
             </div>
 
-            <div className={styles.tableWrap}>
+            <div className={styles.tableWrap} style={{ overflowX: 'auto' }}>
               <table className={styles.table}>
                 <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Recipient</th>
-                    <th>Company</th>
-                    <th>Product</th>
-                    <th>Unit</th>
-                    <th>Qty</th>
-                    <th>From store</th>
-                    <th>Issued by</th>
-                  </tr>
+                  <tr>{cols.map(c => <th key={c.label}>{c.label}</th>)}</tr>
                 </thead>
                 <tbody>
                   {report.rows.map((r, i) => (
                     <tr key={i}>
-                      <td className={styles.mono}>{new Date(r.date).toLocaleDateString()}</td>
-                      <td>{r.recipientName}</td>
-                      <td className={styles.fieldHint}>{r.recipientCompany || '—'}</td>
-                      <td className={styles.itemName}>{r.product}</td>
-                      <td className={styles.mono}>{r.unit}</td>
-                      <td className={styles.mono}>{fmt(r.quantity)}</td>
-                      <td>{r.store}</td>
-                      <td className={styles.fieldHint}>{r.issuedBy || '—'}</td>
+                      {cols.map(c => (
+                        <td
+                          key={c.label}
+                          className={c.strong ? styles.itemName : c.num || c.mono ? styles.mono : c.hint ? styles.fieldHint : undefined}
+                        >
+                          {c.num ? fmt(c.value(r)) : c.value(r)}
+                        </td>
+                      ))}
                     </tr>
                   ))}
                   {report.rows.length === 0 && (
-                    <tr><td colSpan={8} className={styles.fieldHint}>No issues to external parties in this period.</td></tr>
+                    <tr><td colSpan={cols.length} className={styles.fieldHint}>{EMPTY_TEXT[report.scope]}</td></tr>
                   )}
                 </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {report && report.scope === 'ref' && (
-          <div id="report-printable">
-            <div style={{ marginBottom: 16 }}>
-              <h3 style={{ marginBottom: 4 }}>Ref No. {report.refNo}</h3>
-            </div>
-
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Product</th><th>Unit</th><th>Type</th><th>Qty</th><th>Rate</th><th>Store</th><th>Added by</th><th>Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.rows.map((r, i) => (
-                    <tr key={i}>
-                      <td className={styles.itemName}>{r.product}</td>
-                      <td className={styles.mono}>{r.unit}</td>
-                      <td>{r.type}</td>
-                      <td className={styles.mono}>{fmt(r.quantity)}</td>
-                      <td className={styles.mono}>{fmt(r.rate)}</td>
-                      <td>{r.store}</td>
-                      <td className={styles.fieldHint}>{r.addedBy || '—'}</td>
-                      <td className={styles.mono}>{new Date(r.date).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                  {report.rows.length === 0 && (
-                    <tr><td colSpan={8} className={styles.fieldHint}>No entries found for this ref no.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {report && report.scope !== 'external' && report.scope !== 'ref' && (
-          <div id="report-printable">
-            <div style={{ marginBottom: 16 }}>
-              {settings?.companyName && (
-                <div style={{ marginBottom: 12 }}>
-                  {settings.logoUrl && <img src={settings.logoUrl} alt="" style={{ height: 40, marginBottom: 6 }} />}
-                  <div style={{ fontWeight: 600 }}>{settings.companyName}</div>
-                  {settings.address && <div className={styles.fieldHint}>{settings.address}</div>}
-                  {(settings.phone || settings.email) && (
-                    <div className={styles.fieldHint}>{[settings.phone, settings.email].filter(Boolean).join(' · ')}</div>
-                  )}
-                </div>
-              )}
-              <h3 style={{ marginBottom: 4 }}>{report.label}</h3>
-              <p className={styles.storeMeta}>
-                {report.from} to {report.to} · {report.scope === 'category' ? 'Category-wide' : 'Single store'}
-              </p>
-            </div>
-
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    {report.scope === 'category' && <th>Store</th>}
-                    <th>Product</th>
-                    <th>Unit</th>
-                    <th>Opening</th>
-                    <th>Added</th>
-                    <th>Deducted</th>
-                    <th>Closing</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.rows.map((r, i) => (
-                    <tr key={i}>
-                      {report.scope === 'category' && <td>{r.storeName}</td>}
-                      <td className={styles.itemName}>{r.productName}</td>
-                      <td className={styles.mono}>{r.unit}</td>
-                      <td className={styles.mono}>{fmt(r.opening)}</td>
-                      <td className={styles.mono}>{fmt(r.added)}</td>
-                      <td className={styles.mono}>{fmt(r.deducted)}</td>
-                      <td className={styles.mono}>{fmt(r.closing)}</td>
-                    </tr>
-                  ))}
-                  {report.rows.length === 0 && (
-                    <tr>
-                      <td colSpan={report.scope === 'category' ? 7 : 6} className={styles.fieldHint}>
-                        No activity in this period.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-                {totals && report.rows.length > 0 && (
+                {footer && (
                   <tfoot>
                     <tr>
-                      {report.scope === 'category' && <td></td>}
-                      <td className={styles.itemName}>Total</td>
-                      <td></td>
-                      <td className={styles.mono}>{fmt(totals.opening)}</td>
-                      <td className={styles.mono}>{fmt(totals.added)}</td>
-                      <td className={styles.mono}>{fmt(totals.deducted)}</td>
-                      <td className={styles.mono}>{fmt(totals.closing)}</td>
+                      {footer.map((v, i) => (
+                        <td key={i} className={typeof v === 'number' ? styles.mono : styles.itemName}>
+                          {typeof v === 'number' ? fmt(v) : v}
+                        </td>
+                      ))}
                     </tr>
                   </tfoot>
                 )}

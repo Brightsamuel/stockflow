@@ -300,3 +300,189 @@
   font-size: 12px;
   line-height: 1.4;
 }
+
+/* ── Layout sections ─────────────────────────────────────────────────────── */
+.sidebar {
+  transition: width 0.15s, min-width 0.15s;
+}
+
+.sidebarCollapsed {
+  width: 56px;
+  min-width: 56px;
+  align-items: center;
+}
+
+.collapseBtn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.collapseBtn:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.section {
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-bottom: 0.5px solid var(--border);
+}
+
+.storesSection {
+  flex: 1;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.navLink i {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.navLink:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.navLinkActive,
+.navLinkActive:hover {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Row actions only show on hover/focus so the tree stays readable */
+.catActions,
+.storeActions {
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.catHeader:hover .catActions,
+.catHeader:focus-within .catActions,
+.storeRowWrap:hover .storeActions,
+.storeRowWrap:focus-within .storeActions {
+  opacity: 1;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.footer {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.userChip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.userName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.footerActions {
+  display: flex;
+  gap: 6px;
+}
+
+.footerBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.footerBtn:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+/* ── Collapsed rail ──────────────────────────────────────────────────────── */
+.railHeader {
+  padding: 16px 0 12px;
+  border-bottom: 0.5px solid var(--border);
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0;
+  width: 100%;
+}
+
+.rail .navLink {
+  width: 38px;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.railDivider {
+  width: 24px;
+  border-top: 0.5px solid var(--border);
+  margin: 6px 0;
+}

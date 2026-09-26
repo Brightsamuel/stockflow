@@ -47,6 +47,7 @@ export async function PUT(req, { params }) {
         data: {
           storeId: existing.storeId,
           productId: existing.productId,
+          ownerId: existing.ownerId,
           type: "EDIT",
           quantity: entry.quantity,
           rate: entry.rate,
@@ -89,6 +90,7 @@ export async function DELETE(req, { params }) {
         data: {
           storeId: existing.storeId,
           productId: existing.productId,
+          ownerId: existing.ownerId,
           type: "DELETE",
           quantity: existing.quantity,
           rate: existing.rate,

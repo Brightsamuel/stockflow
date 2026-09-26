@@ -2,10 +2,11 @@ import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
 import { requireUser } from "@/lib/auth"
 import { applyStockIn } from "@/lib/stockIn"
+import { NO_OWNER } from "@/lib/owners"
 
 // POST /api/stores/:id/stock-in
-// Body: { refNo?, entryDate?, items: [{ productId, rate, quantity, lowStockAt? }] }
-// Every item is saved under the same ref no. and date, all together or not at all.
+// Body: { refNo?, entryDate?, ownerId?, items: [{ productId, rate, quantity, lowStockAt? }] }
+// Every item is saved under the same ref no., date and owner, all together or not at all.
 export async function POST(req, { params }) {
   const { id } = await params
   let user
@@ -16,7 +17,7 @@ export async function POST(req, { params }) {
  }
 
   try {
-    const { refNo, entryDate, items } = await req.json()
+    const { refNo, entryDate, items, ownerId } = await req.json()
 
     if (!Array.isArray(items) || items.length === 0)
       return NextResponse.json({ error: "Add at least one item" }, { status: 400 })
@@ -49,11 +50,15 @@ export async function POST(req, { params }) {
     if (found !== productIds.length)
       return NextResponse.json({ error: "One or more products no longer exist" }, { status: 404 })
 
+    const owner = ownerId || NO_OWNER
+    if (owner !== NO_OWNER && !(await prisma.stockOwner.findUnique({ where: { id: owner } })))
+      return NextResponse.json({ error: "Stock owner not found" }, { status: 404 })
+
     const logUserId = store.category.trackLogs ? user.id : null
     const ref = refNo?.trim() || null
 
     await prisma.$transaction(
-      tx => applyStockIn(tx, id, items, { refNo: ref, entryDate: parsedDate, userId: logUserId }),
+      tx => applyStockIn(tx, id, items, { refNo: ref, entryDate: parsedDate, userId: logUserId, ownerId: owner }),
       { timeout: 20000 },
     )
 

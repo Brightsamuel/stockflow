@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/ConfirmProvider'
-import { StockOutModal } from '@/dashboard/StoreDashboard'
+import { StockMoveModal, ISSUE_DESTINATIONS } from '@/dashboard/StoreDashboard'
 import styles from '@/dashboard/store.module.css'
 
 const NEW_UNIT_VALUE = '__new_unit__'
@@ -217,7 +217,7 @@ export default function ProductsManager({ initialProducts, initialUnits, allStor
     }
   }
 
-  // StockOutModal expects a store with items; the opening balance is presented as one
+  // StockMoveModal expects a store with items; the opening balance is presented as one
   const issuingStore = issuing && (() => {
     const { opening } = balancesOf(issuing)
     return {
@@ -228,6 +228,8 @@ export default function ProductsManager({ initialProducts, initialUnits, allStor
         productId: issuing.id,
         name: issuing.name,
         unit: issuing.unit.name,
+        owner: '—',
+        rate: opening.rate,
         quantity: opening.quantity,
       }],
     }
@@ -361,10 +363,13 @@ export default function ProductsManager({ initialProducts, initialUnits, allStor
       )}
 
       {issuingStore && (
-        <StockOutModal
+        <StockMoveModal
+          title="Issue from opening balance"
+          destinations={ISSUE_DESTINATIONS}
           store={issuingStore}
           allStores={allStores}
           initialItemId={issuingStore.items[0].id}
+          allowNext={false}
           onClose={() => setIssuing(null)}
           onDone={() => { setIssuing(null); refreshAll() }}
         />

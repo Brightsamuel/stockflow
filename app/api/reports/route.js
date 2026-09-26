@@ -1,16 +1,27 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
-import { buildReport, buildRecipientReport, buildRefReport } from "@/lib/reports"
+import { requireUser } from "@/lib/auth"
+import { buildReport, buildRecipientReport, buildRefReport, buildProjectReport } from "@/lib/reports"
 
 // GET /api/reports?storeId=X&from=YYYY-MM-DD&to=YYYY-MM-DD
 // GET /api/reports?categoryId=Y&from=YYYY-MM-DD&to=YYYY-MM-DD
+// GET /api/reports?project=true|<projectId>&from=…&to=…   (field records)
+// Any scope except refNo also accepts &ownerId=<ownerId>
 export async function GET(req) {
+  try {
+    await requireUser()
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: e.status || 401 })
+  }
+
   try {
     const { searchParams } = new URL(req.url)
     const storeId = searchParams.get("storeId")
     const categoryId = searchParams.get("categoryId")
     const external = searchParams.get("external")
     const refNo = searchParams.get("refNo")
+    const project = searchParams.get("project")
+    const ownerId = searchParams.get("ownerId") || null
     const fromRaw = searchParams.get("from")
     const toRaw = searchParams.get("to")
 
@@ -30,6 +41,19 @@ export async function GET(req) {
     if (from > to)
       return NextResponse.json({ error: "'From' date must be before 'To' date" }, { status: 400 })
 
+    // ── Field records: stock used on projects ───────────────────────────────
+    if (project) {
+      const projectId = project === "true" ? null : project
+      let label = "All projects"
+      if (projectId) {
+        const found = await prisma.project.findUnique({ where: { id: projectId } })
+        if (!found) return NextResponse.json({ error: "Project not found" }, { status: 404 })
+        label = found.name
+      }
+      const rows = await buildProjectReport(projectId, from, to, ownerId)
+      return NextResponse.json({ scope: "field", label, from: fromRaw, to: toRaw, rows })
+    }
+
     // ── External recipient report ───────────────────────────────────────────
     if (external) {
       const recipientId = external === "true" ? null : external
@@ -39,7 +63,7 @@ export async function GET(req) {
         if (!recipient) return NextResponse.json({ error: "Recipient not found" }, { status: 404 })
         label = recipient.company ? `${recipient.name} (${recipient.company})` : recipient.name
       }
-      const rows = await buildRecipientReport(recipientId, from, to)
+      const rows = await buildRecipientReport(recipientId, from, to, ownerId)
       return NextResponse.json({ scope: "external", label, from: fromRaw, to: toRaw, rows })
     }
 
@@ -67,7 +91,7 @@ export async function GET(req) {
       meta = { scope: "category", label: category.name }
     }
 
-    const rows = await buildReport(storeIds, from, to)
+    const rows = await buildReport(storeIds, from, to, ownerId)
 
     return NextResponse.json({ ...meta, from: fromRaw, to: toRaw, rows })
   } catch (e) {

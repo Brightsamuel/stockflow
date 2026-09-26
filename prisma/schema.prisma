@@ -68,12 +68,14 @@ model StockEntry {
   lowStockAt Float     @default(0)
   isDeleted  Boolean   @default(false)
   deletedAt  DateTime?
-  product    Product   @relation(fields: [productId], references: [id])
-  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  ownerId    String     @default("unassigned") // each owner's stock of a product is its own row
+  product    Product    @relation(fields: [productId], references: [id])
+  store      Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  owner      StockOwner @relation(fields: [ownerId], references: [id])
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 
-  @@unique([productId, storeId])
+  @@unique([productId, storeId, ownerId])
 }
 
 // Every movement is written here — immutable audit trail
@@ -89,10 +91,14 @@ model StockLog {
   entryDate   DateTime   @default(now())
   userId      String?
   recipientId String?
+  ownerId     String     @default("unassigned")
+  projectId   String?    // set when stock is issued to a project (used in the field)
   store       Store      @relation(fields: [storeId], references: [id])
   product     Product    @relation(fields: [productId], references: [id])
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
   recipient   Recipient? @relation(fields: [recipientId], references: [id])
+  owner       StockOwner @relation(fields: [ownerId], references: [id])
+  project     Project?   @relation(fields: [projectId], references: [id])
   createdAt   DateTime   @default(now())
 }
 
@@ -104,6 +110,10 @@ model Transfer {
   productId     String
   quantity      Float
   userId        String?
+  ownerId       String     @default("unassigned")
+  projectId     String?
+  refNo         String?
+  entryDate     DateTime   @default(now())
   createdAt     DateTime   @default(now())
 
   sourceStore Store      @relation("SourceStore", fields: [sourceStoreId], references: [id])
@@ -111,6 +121,8 @@ model Transfer {
   recipient   Recipient? @relation(fields: [recipientId], references: [id])
   product     Product    @relation(fields: [productId], references: [id])
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  owner       StockOwner @relation(fields: [ownerId], references: [id])
+  project     Project?   @relation(fields: [projectId], references: [id])
 }
 
 model User {
@@ -131,6 +143,26 @@ model Recipient {
   createdAt DateTime   @default(now())
   transfers Transfer[]
   logs      StockLog[]
+}
+
+// Who a batch of stock belongs to. The built-in "unassigned" row means no owner.
+model StockOwner {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  createdAt DateTime     @default(now())
+  entries   StockEntry[]
+  logs      StockLog[]
+  transfers Transfer[]
+}
+
+// A job/site that stock is issued to for use in the field (field records)
+model Project {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  location  String?
+  createdAt DateTime   @default(now())
+  logs      StockLog[]
+  transfers Transfer[]
 }
 
 model Settings {

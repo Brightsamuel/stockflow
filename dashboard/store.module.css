@@ -13,6 +13,12 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  transition: margin-left 0.15s;
+}
+
+/* Sidebar collapsed to its icon rail */
+.shellCollapsed .main {
+  margin-left: 56px;
 }
 
 /* ── Topbar ───────────────────────────────────────────────────────────────── */
@@ -652,4 +658,57 @@
   color: var(--text-secondary);
   max-width: 340px;
   line-height: 1.6;
+}
+
+/* ── Suggestion dropdown (ref no. lookup) ────────────────────────────────── */
+.suggestList {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin-top: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(15, 17, 23, 0.12);
+}
+
+.suggestItem {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-bottom: 0.5px solid var(--border);
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggestItem:last-child {
+  border-bottom: none;
+}
+
+.suggestItem:hover {
+  background: var(--surface-3);
+}
+
+.suggestTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.suggestEmpty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
