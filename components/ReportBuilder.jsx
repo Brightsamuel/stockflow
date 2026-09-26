@@ -94,6 +94,36 @@ const SUBTITLE = {
   [SCOPE_FIELD]: 'Stock used on projects (field records)',
 }
 
+// Company details shown on the right of every report header (screen, print, PDF, Excel)
+function companyLines(settings) {
+  return [settings?.companyName, settings?.address, settings?.phone, settings?.email].filter(Boolean)
+}
+
+// Loads the logo for the PDF; returns null when the image can't be fetched (e.g. the host blocks it)
+async function loadLogo(url) {
+  if (!url) return null
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+    const img = await new Promise((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = reject
+      image.src = dataUrl
+    })
+    return { dataUrl, width: img.naturalWidth, height: img.naturalHeight }
+  } catch {
+    return null
+  }
+}
+
 // Footer row: "Total" in the first column, sums under columns marked total
 function totalsRow(cols, rows) {
   if (!rows.length || !cols.some(c => c.total)) return null
@@ -201,31 +231,43 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
     const autoTable = (await import('jspdf-autotable')).default
 
     const doc = new jsPDF({ orientation: cols.length > 8 ? 'landscape' : 'portrait' })
-    let y = 15
+    const margin = 14
+    const right = doc.internal.pageSize.getWidth() - margin
 
-    if (settings?.companyName) {
-      doc.setFontSize(14)
-      doc.text(settings.companyName, 14, y)
-      y += 6
-      doc.setFontSize(9)
-      doc.setTextColor(100)
-      if (settings.address) { doc.text(settings.address, 14, y); y += 5 }
-      const contact = [settings.phone, settings.email].filter(Boolean).join(' · ')
-      if (contact) { doc.text(contact, 14, y); y += 5 }
-      doc.setTextColor(0)
-      y += 4
-    }
-
-    doc.setFontSize(12)
-    doc.text(report.label, 14, y)
-    y += 6
+    // Left: report title and period
+    doc.setFontSize(13)
+    doc.text(report.label, margin, 20)
+    let leftY = 26
     if (subtitle) {
       doc.setFontSize(9)
       doc.setTextColor(100)
-      doc.text(subtitle, 14, y)
+      doc.text(subtitle, margin, leftY)
       doc.setTextColor(0)
-      y += 6
+      leftY += 6
     }
+
+    // Right: logo, then company name, location, phone and email, right-aligned
+    let rightY = 12
+    const logo = await loadLogo(settings?.logoUrl)
+    if (logo) {
+      const h = 14
+      const w = Math.min((logo.width / logo.height) * h, 50)
+      try {
+        doc.addImage(logo.dataUrl, right - w, rightY, w, h)
+        rightY += h + 5
+      } catch {
+        // Unsupported image format; carry on without the logo
+      }
+    }
+    companyLines(settings).forEach((line, i) => {
+      doc.setFontSize(i === 0 ? 11 : 9)
+      doc.setTextColor(i === 0 ? 0 : 100)
+      doc.text(line, right, rightY + (i === 0 ? 3 : 0), { align: 'right' })
+      rightY += i === 0 ? 8 : 5
+    })
+    doc.setTextColor(0)
+
+    const y = Math.max(leftY, rightY) + 4
 
     const numeric = { halign: 'right' }
     autoTable(doc, {
@@ -246,16 +288,15 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
   async function exportExcel() {
     const XLSX = await import('xlsx')
 
-    const headerRows = []
-    if (settings?.companyName) {
-      headerRows.push([settings.companyName])
-      if (settings.address) headerRows.push([settings.address])
-      const contact = [settings.phone, settings.email].filter(Boolean).join(' · ')
-      if (contact) headerRows.push([contact])
-      headerRows.push([])
-    }
-    headerRows.push([report.label])
-    if (subtitle) headerRows.push([subtitle])
+    // Title on the left, company details in the last column (right side)
+    const left = [report.label, subtitle].filter(Boolean)
+    const company = companyLines(settings)
+    const headerRows = Array.from({ length: Math.max(left.length, company.length) }, (_, i) => {
+      const row = Array(cols.length).fill('')
+      row[0] = left[i] ?? ''
+      if (company[i]) row[cols.length - 1] = company[i]
+      return row
+    })
     headerRows.push([])
 
     const rows = report.rows.map(r => cols.map(c => c.value(r)))
@@ -279,19 +320,6 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
             {isField ? 'Stock used on projects in a given period' : 'Opening/closing balance in a given period'}
           </span>
         </div>
-        {report && (
-          <div className={styles.topbarActions}>
-            <button className={styles.btnGhost} onClick={() => window.print()}>
-              <i className="ti ti-printer" /> Print
-            </button>
-            <button className={styles.btnGhost} onClick={exportPdf}>
-              <i className="ti ti-file-type-pdf" /> Export PDF
-            </button>
-            <button className={styles.btnGhost} onClick={exportExcel}>
-              <i className="ti ti-file-spreadsheet" /> Export Excel
-            </button>
-          </div>
-        )}
       </div>
 
       <div className={styles.content}>
@@ -438,20 +466,40 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
         </form>
 
         {report && (
+          <div className={styles.reportActions} data-no-print="true">
+            <span className={styles.fieldHint}>
+              {report.rows.length} row{report.rows.length === 1 ? '' : 's'}
+            </span>
+            <div className={styles.rowActions}>
+              <button className={styles.btnGhost} onClick={() => window.print()}>
+                <i className="ti ti-printer" /> Print
+              </button>
+              <button className={styles.btnGhost} onClick={exportPdf}>
+                <i className="ti ti-file-type-pdf" /> Generate PDF
+              </button>
+              <button className={styles.btnGhost} onClick={exportExcel}>
+                <i className="ti ti-file-spreadsheet" /> Export to Excel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {report && (
           <div id="report-printable">
-            <div style={{ marginBottom: 16 }}>
-              {settings?.companyName && (
-                <div style={{ marginBottom: 12 }}>
-                  {settings.logoUrl && <img src={settings.logoUrl} alt="" style={{ height: 40, marginBottom: 6 }} />}
-                  <div style={{ fontWeight: 600 }}>{settings.companyName}</div>
-                  {settings.address && <div className={styles.fieldHint}>{settings.address}</div>}
-                  {(settings.phone || settings.email) && (
-                    <div className={styles.fieldHint}>{[settings.phone, settings.email].filter(Boolean).join(' · ')}</div>
-                  )}
+            <div className={styles.reportHeader}>
+              <div>
+                <h3 style={{ marginBottom: 4 }}>{report.label}</h3>
+                {subtitle && <p className={styles.storeMeta}>{subtitle}</p>}
+              </div>
+              {(settings?.logoUrl || companyLines(settings).length > 0) && (
+                <div className={styles.companyBlock}>
+                  {settings?.logoUrl && <img src={settings.logoUrl} alt="" className={styles.companyLogo} />}
+                  {settings?.companyName && <div className={styles.companyName}>{settings.companyName}</div>}
+                  {settings?.address && <div className={styles.fieldHint}>{settings.address}</div>}
+                  {settings?.phone && <div className={styles.fieldHint}>{settings.phone}</div>}
+                  {settings?.email && <div className={styles.fieldHint}>{settings.email}</div>}
                 </div>
               )}
-              <h3 style={{ marginBottom: 4 }}>{report.label}</h3>
-              {subtitle && <p className={styles.storeMeta}>{subtitle}</p>}
             </div>
 
             <div className={styles.tableWrap} style={{ overflowX: 'auto' }}>
