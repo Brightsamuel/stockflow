@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { apiFetch } from '@/lib/apiFetch'
@@ -25,50 +25,92 @@ function timeAgo(date) {
   return `${dd}/${mm}/${yy}`
 }
 
-// ── Inline Add Item Row ─────────────────────────────────────────────────────
-function AddItemRow({ storeId, onDone, onCancel }) {
-  const rowRef = useRef(null)
+// ── Stock In Modal ─────────────────────────────────────────────────────────
+// One ref no. and date for the whole receipt, followed by as many item lines as needed
+let lineKey = 0
+function blankLine() {
+  return { key: ++lineKey, productId: '', rate: '', quantity: '', lowStockAt: '' }
+}
+
+function isFilled(line) {
+  return line.productId || line.rate !== '' || line.quantity !== ''
+}
+
+function StockInModal({ storeId, onClose, onDone }) {
+  const router = useRouter()
+  const todayStr = new Date().toISOString().slice(0, 10)
   const [products, setProducts] = useState([])
   const [loadingProducts, setLoadingProducts] = useState(true)
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const [form, setForm] = useState({ productId: '', rate: '', quantity: '', lowStockAt: '', refNo: '', entryDate: todayStr })
+  const [knownRefs, setKnownRefs] = useState([])
+  const [refNo, setRefNo] = useState('')
+  const [entryDate, setEntryDate] = useState(todayStr)
+  const [lines, setLines] = useState(() => [blankLine()])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [saved, setSaved] = useState('')
 
   useEffect(() => {
-      rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     fetch('/api/products')
       .then(res => res.json())
       .then(data => setProducts(Array.isArray(data) ? data : []))
       .catch(() => setProducts([]))
       .finally(() => setLoadingProducts(false))
+    fetch('/api/receipts')
+      .then(res => res.json())
+      .then(data => setKnownRefs(Array.isArray(data) ? data.map(r => r.refNo) : []))
+      .catch(() => setKnownRefs([]))
   }, [])
 
-  const selectedProduct = products.find(p => p.id === form.productId)
+  const refExists = refNo.trim() !== '' && knownRefs.includes(refNo.trim())
+  const filledCount = lines.filter(isFilled).length
+  const total = lines.reduce((s, l) => s + (parseFloat(l.rate) || 0) * (parseFloat(l.quantity) || 0), 0)
 
-  function set(field, val) { setForm(f => ({ ...f, [field]: val })) }
+  function setLine(key, field, val) {
+    setLines(ls => ls.map(l => (l.key === key ? { ...l, [field]: val } : l)))
+  }
 
-  async function submit() {
-    if (!form.productId || form.rate === '' || form.rate == null || !form.quantity) {
-      setError('Product, rate and quantity are required.'); return
+  function removeLine(key) {
+    setLines(ls => (ls.length > 1 ? ls.filter(l => l.key !== key) : ls))
+  }
+
+  // keepOpen: clear the lines and ref no. afterwards so the next receipt can be entered
+  async function submit(keepOpen) {
+    const filled = lines.filter(isFilled)
+    if (filled.length === 0) { setError('Add at least one item.'); return }
+    const bad = filled.find(l => !l.productId || l.rate === '' || parseFloat(l.rate) < 0 || !(parseFloat(l.quantity) > 0))
+    if (bad) {
+      setError(`Line ${lines.indexOf(bad) + 1}: select a product, and enter a rate (0 or more) and a quantity greater than 0.`)
+      return
     }
-    setLoading(true); setError('')
+    if (!entryDate) { setError('Select a date.'); return }
+
+    setLoading(true); setError(''); setSaved('')
     try {
       const res = await apiFetch(`/api/stores/${storeId}/stock-in`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          productId: form.productId,
-          rate: parseFloat(form.rate),
-          quantity: parseFloat(form.quantity),
-          lowStockAt: form.lowStockAt ? parseFloat(form.lowStockAt) : 0,
-          refNo: form.refNo.trim() || null,
-          entryDate: form.entryDate,
+          refNo: refNo.trim() || null,
+          entryDate,
+          items: filled.map(l => ({
+            productId: l.productId,
+            rate: parseFloat(l.rate),
+            quantity: parseFloat(l.quantity),
+            // Left blank keeps the item's existing low-stock alert
+            lowStockAt: l.lowStockAt === '' ? null : parseFloat(l.lowStockAt),
+          })),
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      onDone()
+      if (!keepOpen) { onDone(); return }
+
+      setSaved(`Saved ${data.count} item${data.count === 1 ? '' : 's'}${data.refNo ? ` under ${data.refNo}` : ''}. Enter the next ref no.`)
+      if (data.refNo) setKnownRefs(r => [...r, data.refNo])
+      setRefNo('')
+      setLines([blankLine()])
+      setLoading(false)
+      router.refresh()
     } catch (e) {
       setError(e.message)
       setLoading(false)
@@ -76,83 +118,129 @@ function AddItemRow({ storeId, onDone, onCancel }) {
   }
 
   return (
-    <>
-      <tr className={styles.addRow} ref={rowRef}>
-        <td colSpan={2}>
-          <select
-            value={form.productId}
-            onChange={e => set('productId', e.target.value)}
-            disabled={loadingProducts}
-            className={styles.inlineSelect}
-          >
-            <option value="">
-              {loadingProducts ? 'Loading…' : '— select product —'}
-            </option>
-            {products.map(p => (
-              <option key={p.id} value={p.id}>{p.name} ({p.unit.name})</option>
-            ))}
-          </select>
-        </td>
-        <td>
-          <input
-            type="number" min="0" placeholder="Rate"
-            value={form.rate} onChange={e => set('rate', e.target.value)}
-            className={styles.inlineInputSmall}
-          />
-        </td>
-        <td>
-          <input
-            type="number" min="0" placeholder="Qty"
-            value={form.quantity} onChange={e => set('quantity', e.target.value)}
-            className={styles.inlineInputSmall}
-          />
-        </td>
-        <td>
-          <input
-            type="text" placeholder="Ref no."
-            value={form.refNo} onChange={e => set('refNo', e.target.value)}
-            className={styles.inlineInputSmall}
-          />
-          <div className={styles.fieldHint} style={{ marginTop: 6 }}>Format suggestion: RCT-1234 (optional)</div>
-        </td>
-        <td>
-          <input
-            type="date"
-            value={form.entryDate}
-            onChange={e => set('entryDate', e.target.value)}
-            max={todayStr}
-            className={styles.inlineInputSmall}
-          />
-        </td>
-        <td>
-          <input
-            type="number" min="0" placeholder="Low at"
-            value={form.lowStockAt} onChange={e => set('lowStockAt', e.target.value)}
-            className={styles.inlineInputSmall}
-          />
-        </td>
-        <td colSpan={5}>
-          <div className={styles.rowActions}>
-            <button className={styles.btnPrimary} onClick={submit} disabled={loading || !form.productId}>
-              {loading ? '…' : 'Add'}
-            </button>
-            <button className={styles.btnGhost} onClick={onCancel}>Cancel</button>
+    <div className={styles.backdrop}>
+      <div className={`${styles.modal} ${styles.modalWide}`}>
+        <div className={styles.modalHeader}>
+          <h3>Stock in</h3>
+          <button className={styles.closeBtn} onClick={onClose}><i className="ti ti-x" /></button>
+        </div>
+
+        <div className={styles.modalBody}>
+          <div className={styles.fieldRow}>
+            <div className={styles.field}>
+              <label>Ref no.</label>
+              <input
+                autoFocus
+                value={refNo}
+                onChange={e => { setRefNo(e.target.value); setSaved('') }}
+                placeholder="e.g. RCT-1234 (optional)"
+              />
+            </div>
+            <div className={styles.field}>
+              <label>Date</label>
+              <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} max={todayStr} />
+            </div>
           </div>
-        </td>
-      </tr>
-      {!loadingProducts && products.length === 0 && (
-        <tr>
-          <td colSpan={10} className={styles.fieldHint}>
-            No products yet — create one in the Products section first.
-          </td>
-        </tr>
-      )}
-      {error && (
-        <tr>
-          <td colSpan={10} className={styles.errorMsg}>{error}</td>
-        </tr>
-      )}
-    </>
+          <span className={styles.fieldHint}>
+            {refExists
+              ? <>Ref no. <strong>{refNo.trim()}</strong> already has entries. These items will be added to it.</>
+              : 'The ref no. and date apply to every item below.'}
+          </span>
+
+          <div className={styles.tableWrap} style={{ overflowX: 'auto' }}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Product</th>
+                  <th>Rate (UGX)</th>
+                  <th>Qty</th>
+                  <th>Low at</th>
+                  <th>Amount</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  <tr key={l.key} className={styles.addRow}>
+                    <td className={styles.mono}>{i + 1}</td>
+                    <td style={{ minWidth: 180 }}>
+                      <select
+                        value={l.productId}
+                        onChange={e => setLine(l.key, 'productId', e.target.value)}
+                        disabled={loadingProducts}
+                        className={styles.inlineSelect}
+                      >
+                        <option value="">{loadingProducts ? 'Loading…' : '— select product —'}</option>
+                        {products.map(p => (
+                          <option key={p.id} value={p.id}>{p.name} ({p.unit.name})</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        type="number" min="0" placeholder="Rate"
+                        value={l.rate} onChange={e => setLine(l.key, 'rate', e.target.value)}
+                        className={styles.inlineInputSmall}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number" min="0" placeholder="Qty"
+                        value={l.quantity} onChange={e => setLine(l.key, 'quantity', e.target.value)}
+                        className={styles.inlineInputSmall}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number" min="0" placeholder="Optional"
+                        value={l.lowStockAt} onChange={e => setLine(l.key, 'lowStockAt', e.target.value)}
+                        className={styles.inlineInputSmall}
+                      />
+                    </td>
+                    <td className={styles.mono}>{fmt((parseFloat(l.rate) || 0) * (parseFloat(l.quantity) || 0))}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                        title="Remove line"
+                        onClick={() => removeLine(l.key)}
+                        disabled={lines.length === 1}
+                      >
+                        <i className="ti ti-x" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <button type="button" className={styles.btnGhost} onClick={() => setLines(ls => [...ls, blankLine()])}>
+              <i className="ti ti-plus" /> Add item
+            </button>
+            <span className={styles.mono}>Total: UGX {fmt(total)}</span>
+          </div>
+
+          {!loadingProducts && products.length === 0 && (
+            <p className={styles.fieldHint}>No products yet — create one in the Products section first.</p>
+          )}
+          {saved && <p className={styles.fieldHint} style={{ color: 'var(--success)' }}>{saved}</p>}
+          {error && <p className={styles.errorMsg}>{error}</p>}
+        </div>
+
+        <div className={styles.modalFooter}>
+          <button className={styles.btnGhost} onClick={onClose}>{saved ? 'Close' : 'Cancel'}</button>
+          <button className={styles.btnGhost} onClick={() => submit(true)} disabled={loading}>
+            Save &amp; next ref no.
+          </button>
+          <button className={styles.btnPrimary} onClick={() => submit(false)} disabled={loading}>
+            {loading ? 'Saving…' : filledCount > 0 ? `Save ${filledCount} item${filledCount === 1 ? '' : 's'}` : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -438,7 +526,6 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
   const { confirm, notify } = useConfirm()
   const [tab, setTab] = useState('inventory')
   const [modal, setModal] = useState(null)
-  const [addingItem, setAddingItem] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
 
   const canDelete = currentUser?.role === 'SUPER_ADMIN'
@@ -495,7 +582,7 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
           </span>
         </div>
         <div className={styles.topbarActions}>
-          <button className={styles.btnGhost} onClick={() => setAddingItem(true)}>
+          <button className={styles.btnGhost} onClick={() => setModal('in')}>
             <i className="ti ti-arrow-bar-down" /> Stock in
           </button>
           <button className={styles.btnPrimary} onClick={() => setModal('out')}>
@@ -548,7 +635,7 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
             </div>
 
             {/* Items table */}
-            {store.items.length === 0 && !addingItem ? (
+            {store.items.length === 0 ? (
               <div className={styles.tableEmpty}>
                 <i className="ti ti-package" style={{ fontSize: 32, color: 'var(--text-muted)' }} />
                 <p>No items yet. Use <strong>Stock in</strong> to add your first item.</p>
@@ -613,13 +700,6 @@ export default function StoreDashboard({ store, allStores, transfers, currentUse
                         </td>
                       </tr>
                     ))}
-                    {addingItem && (
-                      <AddItemRow
-                        storeId={store.id}
-                        onDone={() => { setAddingItem(false); router.refresh() }}
-                        onCancel={() => setAddingItem(false)}
-                      />
-                    )}
                   </tbody>
                 </table>
               </div>

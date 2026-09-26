@@ -1,9 +1,11 @@
 import prisma from "@/lib/prisma"
 import { NextResponse } from "next/server"
 import { requireUser } from "@/lib/auth"
+import { applyStockIn } from "@/lib/stockIn"
 
 // POST /api/stores/:id/stock-in
-// Body: { productId, rate, quantity, lowStockAt? }
+// Body: { refNo?, entryDate?, items: [{ productId, rate, quantity, lowStockAt? }] }
+// Every item is saved under the same ref no. and date, all together or not at all.
 export async function POST(req, { params }) {
   const { id } = await params
   let user
@@ -14,64 +16,50 @@ export async function POST(req, { params }) {
  }
 
   try {
-    const { productId, rate, quantity, lowStockAt, refNo, entryDate  } = await req.json()
+    const { refNo, entryDate, items } = await req.json()
 
-    if (!productId || rate == null || quantity == null)
-      return NextResponse.json({ error: "productId, rate and quantity are required" }, { status: 400 })
-    if (rate < 0 || quantity <= 0)
-      return NextResponse.json({ error: "Rate must be 0 or greater, and quantity must be greater than 0" }, { status: 400 })
+    if (!Array.isArray(items) || items.length === 0)
+      return NextResponse.json({ error: "Add at least one item" }, { status: 400 })
+
+    for (const [i, item] of items.entries()) {
+      const line = `Line ${i + 1}`
+      if (!item.productId || item.rate == null || item.quantity == null)
+        return NextResponse.json({ error: `${line}: product, rate and quantity are required` }, { status: 400 })
+      if (!Number.isFinite(item.rate) || !Number.isFinite(item.quantity) || item.rate < 0 || item.quantity <= 0)
+        return NextResponse.json({ error: `${line}: rate must be 0 or greater, and quantity must be greater than 0` }, { status: 400 })
+      if (item.lowStockAt != null && (!Number.isFinite(item.lowStockAt) || item.lowStockAt < 0))
+        return NextResponse.json({ error: `${line}: low stock alert must be 0 or greater` }, { status: 400 })
+    }
 
     let parsedDate = entryDate ? new Date(entryDate) : new Date()
     if (isNaN(parsedDate)) parsedDate = new Date()
     if (parsedDate > new Date())
       return NextResponse.json({ error: "Entry date cannot be in the future" }, { status: 400 })
+
     const store = await prisma.store.findUnique({
       where: { id },
-      include: { category: { select: { trackLogs: true } } },
+      include: { category: { select: { trackLogs: true, isSystem: true } } },
     })
-    if (!store)  return NextResponse.json({ error: "Store not found" }, { status: 404 })
+    if (!store) return NextResponse.json({ error: "Store not found" }, { status: 404 })
+    if (store.category.isSystem)
+      return NextResponse.json({ error: "Opening balances are managed from Manage Products" }, { status: 400 })
 
-    const product = await prisma.product.findUnique({ where: { id: productId } })
-    if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 })
+    const productIds = [...new Set(items.map(item => item.productId))]
+    const found = await prisma.product.count({ where: { id: { in: productIds } } })
+    if (found !== productIds.length)
+      return NextResponse.json({ error: "One or more products no longer exist" }, { status: 404 })
 
     const logUserId = store.category.trackLogs ? user.id : null
+    const ref = refNo?.trim() || null
 
-    const result = await prisma.$transaction(async (tx) => {
-      const existing = await tx.stockEntry.findUnique({
-        where: { productId_storeId: { productId, storeId: id } },
-      })
+    await prisma.$transaction(
+      tx => applyStockIn(tx, id, items, { refNo: ref, entryDate: parsedDate, userId: logUserId }),
+      { timeout: 20000 },
+    )
 
-      let entry
-      if (existing?.isDeleted) {
-        await tx.stockEntry.delete({ where: { id: existing.id } })
-        entry = await tx.stockEntry.create({
-          data: { productId, storeId: id, rate, quantity, lowStockAt: lowStockAt ?? 0 },
-        })
-      } else if (existing) {
-        entry = await tx.stockEntry.update({
-          where: { id: existing.id },
-          data: {
-            quantity: { increment: quantity },
-            rate,
-            ...(lowStockAt != null && { lowStockAt }),
-          },
-        })
-      } else {
-        entry = await tx.stockEntry.create({
-          data: { productId, storeId: id, rate, quantity, lowStockAt: lowStockAt ?? 0 },
-        })
-      }
-
-      await tx.stockLog.create({
-        data: { storeId: id, productId, type: "IN", quantity, rate, userId: logUserId, refNo: refNo?.trim() || null, entryDate: parsedDate },
-      })
-
-      return entry
-    })
-
-    return NextResponse.json(result, { status: 201 })
+    return NextResponse.json({ count: items.length, refNo: ref }, { status: 201 })
   } catch (e) {
     console.error(e)
-    return NextResponse.json({ error: "Failed to add stock" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to add stock. No changes were made." }, { status: 500 })
   }
 }

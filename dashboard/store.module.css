@@ -473,6 +473,11 @@
   flex-direction: column;
 }
 
+/* Wider modal for multi-line forms (Stock in) */
+.modalWide {
+  max-width: 820px;
+}
+
 .modalHeader {
   display: flex;
   align-items: center;
