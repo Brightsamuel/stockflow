@@ -7,7 +7,7 @@ import { loadReportOptions } from '@/lib/reportOptions'
 export default async function FieldRecordsPage() {
   const currentUser = await getCurrentUser()
   if (!currentUser) redirect('/login')
-  const options = await loadReportOptions()
+  const { owners, projects } = await loadReportOptions()
 
-  return <ReportBuilder {...options} initialScope="field" />
+  return <ReportBuilder owners={owners} projects={projects} fieldRecords />
 }

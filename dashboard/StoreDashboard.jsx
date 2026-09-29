@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { apiFetch } from '@/lib/apiFetch'
@@ -54,6 +54,17 @@ function useRefExists(refNo) {
   return refNo.trim() !== '' && existing === refNo.trim()
 }
 
+// Scrolls the form to the bottom whenever a line is added, so the new line is in view
+function useScrollOnAdd(count) {
+  const ref = useRef(null)
+  const prev = useRef(count)
+  useEffect(() => {
+    if (count > prev.current) ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: 'smooth' })
+    prev.current = count
+  }, [count])
+  return ref
+}
+
 // Creates a record through a list API (owners, projects, recipients) and returns its id
 async function createRecord(url, body, fallbackMessage) {
   const res = await fetch(url, {
@@ -96,6 +107,7 @@ function StockInModal({ storeId, onClose, onDone }) {
   }, [])
 
   const refExists = useRefExists(refNo)
+  const bodyRef = useScrollOnAdd(lines.length)
   const filledCount = lines.filter(isFilled).length
   const total = lines.reduce((s, l) => s + (parseFloat(l.rate) || 0) * (parseFloat(l.quantity) || 0), 0)
 
@@ -169,7 +181,7 @@ function StockInModal({ storeId, onClose, onDone }) {
           <button className={styles.closeBtn} onClick={onClose}><i className="ti ti-x" /></button>
         </div>
 
-        <div className={styles.modalBody}>
+        <div className={styles.modalBody} ref={bodyRef}>
           <div className={styles.fieldRow} style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
             <div className={styles.field}>
               <label>Ref no.</label>
@@ -366,6 +378,7 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
   }, [needsProjects, needsRecipients])
 
   const refExists = useRefExists(refNo)
+  const bodyRef = useScrollOnAdd(lines.length)
   const itemsById = Object.fromEntries(store.items.map(i => [i.id, i]))
   const filled = lines.filter(l => l.entryId || l.quantity !== '')
   const total = lines.reduce((s, l) => s + (itemsById[l.entryId]?.rate ?? 0) * (parseFloat(l.quantity) || 0), 0)
@@ -468,7 +481,7 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
           <button className={styles.closeBtn} onClick={onClose}><i className="ti ti-x" /></button>
         </div>
 
-        <div className={styles.modalBody}>
+        <div className={styles.modalBody} ref={bodyRef}>
           <div className={styles.fieldRow} style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
             <div className={styles.field}>
               <label>Ref no.</label>

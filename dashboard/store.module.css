@@ -225,6 +225,12 @@
   border-bottom: none;
 }
 
+/* Totals row: a clear rule separates it from the last data row, on screen and in print */
+.table tfoot td {
+  border-top: 1px solid var(--text-muted);
+  font-weight: 600;
+}
+
 .table tr:hover td {
   background: var(--surface-1);
 }
@@ -526,6 +532,12 @@
   max-height: 65vh;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
+}
+
+/* Sections keep their full height so the body scrolls, instead of squeezing
+   the item table (which has its own overflow) into a clipped strip */
+.modalBody > * {
+  flex-shrink: 0;
 }
 
 .modalBody::-webkit-scrollbar {

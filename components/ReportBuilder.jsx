@@ -133,8 +133,9 @@ function totalsRow(cols, rows) {
   })
 }
 
-export default function ReportBuilder({ categories, owners = [], projects = [], initialScope = SCOPE_STORE }) {
-  const [scope, setScope] = useState(initialScope)
+// fieldRecords: the Field records page, which only shows the project / owner / date filters
+export default function ReportBuilder({ categories = [], owners = [], projects = [], fieldRecords = false }) {
+  const [scope, setScope] = useState(fieldRecords ? SCOPE_FIELD : SCOPE_STORE)
   const [categoryId, setCategoryId] = useState('')
   const [storeId, setStoreId] = useState('')
   const [from, setFrom] = useState('')
@@ -152,12 +153,14 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
   const [settings, setSettings] = useState(null)
 
   useEffect(() => {
-    fetch('/api/recipients')
-      .then(res => res.json())
-      .then(data => setRecipients(Array.isArray(data) ? data : []))
-      .catch(() => setRecipients([]))
+    if (!fieldRecords) {
+      fetch('/api/recipients')
+        .then(res => res.json())
+        .then(data => setRecipients(Array.isArray(data) ? data : []))
+        .catch(() => setRecipients([]))
+    }
     fetch('/api/settings').then(res => res.json()).then(setSettings).catch(() => {})
-  }, [])
+  }, [fieldRecords])
 
   // Ref no. suggestions follow what's typed; an empty box lists the most recent ones
   useEffect(() => {
@@ -309,15 +312,26 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
     XLSX.writeFile(wb, `${fileBase}.xlsx`)
   }
 
-  const isField = scope === SCOPE_FIELD
+  const ownerSelect = (
+    <div className={styles.field}>
+      <label>Stock owner</label>
+      <select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
+        <option value="">All owners</option>
+        <option value={NO_OWNER}>No owner</option>
+        {owners.map(o => (
+          <option key={o.id} value={o.id}>{o.name}</option>
+        ))}
+      </select>
+    </div>
+  )
 
   return (
     <>
       <div className={styles.topbar} data-no-print="true">
         <div className={styles.topbarLeft}>
-          <h2 className={styles.storeName}>{isField ? 'Field records' : 'Reports'}</h2>
+          <h2 className={styles.storeName}>{fieldRecords ? 'Field records' : 'Reports'}</h2>
           <span className={styles.storeMeta}>
-            {isField ? 'Stock used on projects in a given period' : 'Opening/closing balance in a given period'}
+            {fieldRecords ? 'Stock used on projects in a given period' : 'Opening/closing balance in a given period'}
           </span>
         </div>
       </div>
@@ -325,22 +339,23 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
       <div className={styles.content}>
         <form onSubmit={generate} className={styles.field} style={{ maxWidth: 640, marginBottom: 24 }} data-no-print="true">
           <div className={styles.fieldRow}>
-            <div className={styles.field}>
-              <label>Report for</label>
-              <select
-                value={scope}
-                onChange={e => {
-                  setScope(e.target.value); setStoreId(''); setCategoryId(''); setRecipientFilter(''); setProjectFilter('')
-                  setShowRefList(false); setReport(null); setError('')
-                }}
-              >
-                <option value={SCOPE_STORE}>A single store</option>
-                <option value={SCOPE_CATEGORY}>A whole category</option>
-                <option value={SCOPE_FIELD}>Field records (used on projects)</option>
-                <option value={SCOPE_EXTERNAL}>External recipients</option>
-                <option value={SCOPE_REF}>Lookup by Ref No.</option>
-              </select>
-            </div>
+            {!fieldRecords && (
+              <div className={styles.field}>
+                <label>Report for</label>
+                <select
+                  value={scope}
+                  onChange={e => {
+                    setScope(e.target.value); setStoreId(''); setCategoryId(''); setRecipientFilter('')
+                    setShowRefList(false); setReport(null); setError('')
+                  }}
+                >
+                  <option value={SCOPE_STORE}>A single store</option>
+                  <option value={SCOPE_CATEGORY}>A whole category</option>
+                  <option value={SCOPE_EXTERNAL}>External recipients</option>
+                  <option value={SCOPE_REF}>Lookup by Ref No.</option>
+                </select>
+              </div>
+            )}
 
             {scope === SCOPE_STORE && (
               <div className={styles.field}>
@@ -377,6 +392,8 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
                 </select>
               </div>
             )}
+
+            {fieldRecords && ownerSelect}
 
             {scope === SCOPE_EXTERNAL && (
               <div className={styles.field}>
@@ -436,7 +453,7 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
           </div>
 
           {scope !== SCOPE_REF && (
-            <div className={styles.fieldRow} style={{ marginTop: 12, gridTemplateColumns: '1fr 1fr 1fr' }}>
+            <div className={styles.fieldRow} style={{ marginTop: 12, gridTemplateColumns: fieldRecords ? '1fr 1fr' : '1fr 1fr 1fr' }}>
               <div className={styles.field}>
                 <label>From</label>
                 <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
@@ -445,16 +462,7 @@ export default function ReportBuilder({ categories, owners = [], projects = [], 
                 <label>To</label>
                 <input type="date" value={to} onChange={e => setTo(e.target.value)} />
               </div>
-              <div className={styles.field}>
-                <label>Stock owner</label>
-                <select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
-                  <option value="">All owners</option>
-                  <option value={NO_OWNER}>No owner</option>
-                  {owners.map(o => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
-                  ))}
-                </select>
-              </div>
+              {!fieldRecords && ownerSelect}
             </div>
           )}
 
