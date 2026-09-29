@@ -93,6 +93,7 @@ model StockLog {
   recipientId String?
   ownerId     String     @default("unassigned")
   projectId   String?    // set when stock is issued to a project (used in the field)
+  takenBy     String?    // who collected the stock on a stock out
   store       Store      @relation(fields: [storeId], references: [id])
   product     Product    @relation(fields: [productId], references: [id])
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -112,6 +113,7 @@ model Transfer {
   userId        String?
   ownerId       String     @default("unassigned")
   projectId     String?
+  takenBy       String?
   refNo         String?
   entryDate     DateTime   @default(now())
   createdAt     DateTime   @default(now())

@@ -46,6 +46,7 @@ function columnsFor(scope) {
         { label: 'Unit', value: r => r.unit, mono: true },
         { label: 'Qty', value: r => r.quantity, num: true },
         { label: 'From store', value: r => r.store },
+        { label: 'Taken by', value: r => r.takenBy || '—' },
         { label: 'Issued by', value: r => r.issuedBy || '—', hint: true },
       ]
     case SCOPE_FIELD:
@@ -60,6 +61,7 @@ function columnsFor(scope) {
         { label: 'Qty', value: r => r.quantity, num: true },
         { label: 'Rate', value: r => r.rate, num: true },
         { label: 'Value (UGX)', value: r => r.value, num: true, total: true },
+        { label: 'Taken by', value: r => r.takenBy || '—' },
         { label: 'Issued by', value: r => r.issuedBy || '—', hint: true },
       ]
     default:
@@ -134,7 +136,7 @@ function totalsRow(cols, rows) {
 }
 
 // fieldRecords: the Field records page, which only shows the project / owner / date filters
-export default function ReportBuilder({ categories = [], owners = [], projects = [], fieldRecords = false }) {
+export default function ReportBuilder({ categories = [], owners = [], projects = [], takers = [], fieldRecords = false }) {
   const [scope, setScope] = useState(fieldRecords ? SCOPE_FIELD : SCOPE_STORE)
   const [categoryId, setCategoryId] = useState('')
   const [storeId, setStoreId] = useState('')
@@ -142,6 +144,7 @@ export default function ReportBuilder({ categories = [], owners = [], projects =
   const [to, setTo] = useState('')
   const [ownerFilter, setOwnerFilter] = useState('')
   const [projectFilter, setProjectFilter] = useState('')
+  const [takenByFilter, setTakenByFilter] = useState('')
   const [refNoInput, setRefNoInput] = useState('')
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -208,7 +211,10 @@ export default function ReportBuilder({ categories = [], owners = [], projects =
     const params = new URLSearchParams({ from, to })
     if (scope === SCOPE_STORE) params.set('storeId', storeId)
     else if (scope === SCOPE_CATEGORY) params.set('categoryId', categoryId)
-    else if (scope === SCOPE_FIELD) params.set('project', projectFilter || 'true')
+    else if (scope === SCOPE_FIELD) {
+      params.set('project', projectFilter || 'true')
+      if (takenByFilter.trim()) params.set('takenBy', takenByFilter.trim())
+    }
     else params.set('external', recipientFilter || 'true')
     if (ownerFilter) params.set('ownerId', ownerFilter)
     fetchReport(params)
@@ -223,7 +229,12 @@ export default function ReportBuilder({ categories = [], owners = [], projects =
   const cols = report ? columnsFor(report.scope) : []
   const footer = report ? totalsRow(cols, report.rows) : null
   const subtitle = report && report.scope !== SCOPE_REF
-    ? [`${report.from} to ${report.to}`, SUBTITLE[report.scope], report.ownerName && `Owner: ${report.ownerName}`].filter(Boolean).join(' · ')
+    ? [
+        `${report.from} to ${report.to}`,
+        SUBTITLE[report.scope],
+        report.takenBy && `Taken by: ${report.takenBy}`,
+        report.ownerName && `Owner: ${report.ownerName}`,
+      ].filter(Boolean).join(' · ')
     : ''
   const fileBase = !report ? '' : report.scope === SCOPE_REF
     ? `receipt-${report.refNo || 'unknown'}`
@@ -338,7 +349,7 @@ export default function ReportBuilder({ categories = [], owners = [], projects =
 
       <div className={styles.content}>
         <form onSubmit={generate} className={styles.field} style={{ maxWidth: 640, marginBottom: 24 }} data-no-print="true">
-          <div className={styles.fieldRow}>
+          <div className={styles.fieldRow} style={fieldRecords ? { gridTemplateColumns: '1fr 1fr 1fr' } : undefined}>
             {!fieldRecords && (
               <div className={styles.field}>
                 <label>Report for</label>
@@ -390,6 +401,21 @@ export default function ReportBuilder({ categories = [], owners = [], projects =
                     <option key={p.id} value={p.id}>{p.name}{p.location ? ` (${p.location})` : ''}</option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {fieldRecords && (
+              <div className={styles.field}>
+                <label>Taken by</label>
+                <input
+                  list="taken-by-names"
+                  value={takenByFilter}
+                  onChange={e => setTakenByFilter(e.target.value)}
+                  placeholder="Anyone — or type a name"
+                />
+                <datalist id="taken-by-names">
+                  {takers.map(name => <option key={name} value={name} />)}
+                </datalist>
               </div>
             )}
 

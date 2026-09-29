@@ -6,7 +6,7 @@ import { buildReport, buildRecipientReport, buildRefReport, buildProjectReport }
 // GET /api/reports?storeId=X&from=YYYY-MM-DD&to=YYYY-MM-DD
 // GET /api/reports?categoryId=Y&from=YYYY-MM-DD&to=YYYY-MM-DD
 // GET /api/reports?project=true|<projectId>&from=…&to=…   (field records)
-// Any scope except refNo also accepts &ownerId=<ownerId>
+// Any scope except refNo also accepts &ownerId=<ownerId>; field records also accept &takenBy=<name>
 export async function GET(req) {
   try {
     await requireUser()
@@ -22,6 +22,7 @@ export async function GET(req) {
     const refNo = searchParams.get("refNo")
     const project = searchParams.get("project")
     const ownerId = searchParams.get("ownerId") || null
+    const takenBy = searchParams.get("takenBy")?.trim() || null
     const fromRaw = searchParams.get("from")
     const toRaw = searchParams.get("to")
 
@@ -50,8 +51,8 @@ export async function GET(req) {
         if (!found) return NextResponse.json({ error: "Project not found" }, { status: 404 })
         label = found.name
       }
-      const rows = await buildProjectReport(projectId, from, to, ownerId)
-      return NextResponse.json({ scope: "field", label, from: fromRaw, to: toRaw, rows })
+      const rows = await buildProjectReport(projectId, from, to, ownerId, takenBy)
+      return NextResponse.json({ scope: "field", label, from: fromRaw, to: toRaw, takenBy, rows })
     }
 
     // ── External recipient report ───────────────────────────────────────────

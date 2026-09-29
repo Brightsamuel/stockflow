@@ -29,8 +29,9 @@ export async function GET(req) {
 }
 
 // POST /api/transfers
-// Body: { sourceStoreId, targetStoreId | projectId | recipientId, refNo?, entryDate?, items: [{ entryId, quantity }] }
-// targetStoreId = transfer between stores; projectId / recipientId = stock out (leaves the inventory as used/issued)
+// Body: { sourceStoreId, targetStoreId | projectId | recipientId, takenBy?, refNo?, entryDate?, items: [{ entryId, quantity }] }
+// targetStoreId = transfer between stores; projectId / recipientId = stock out (leaves the inventory as used/issued),
+// which must say who took the stock (takenBy)
 export async function POST(req) {
   let user
   try {
@@ -40,7 +41,7 @@ export async function POST(req) {
   }
 
   try {
-    const { sourceStoreId, targetStoreId, projectId, recipientId, refNo, entryDate, items } = await req.json()
+    const { sourceStoreId, targetStoreId, projectId, recipientId, takenBy, refNo, entryDate, items } = await req.json()
 
     if (!sourceStoreId)
       return NextResponse.json({ error: "Source store required" }, { status: 400 })
@@ -49,6 +50,10 @@ export async function POST(req) {
       return NextResponse.json({ error: "Choose one destination: a store, a project or an external party" }, { status: 400 })
     if (targetStoreId && targetStoreId === sourceStoreId)
       return NextResponse.json({ error: "Source and target cannot be the same" }, { status: 400 })
+    // Stock leaving the inventory must record who took it; transfers between stores don't
+    const taker = targetStoreId ? null : takenBy?.trim() || null
+    if (!targetStoreId && !taker)
+      return NextResponse.json({ error: "Enter who is taking the stock (Taken by)" }, { status: 400 })
     if (!Array.isArray(items) || items.length === 0)
       return NextResponse.json({ error: "Add at least one item" }, { status: 400 })
     for (const [i, item] of items.entries()) {
@@ -91,6 +96,7 @@ export async function POST(req) {
         return NextResponse.json({ error: "Recipient not found" }, { status: 404 })
       outNote = `Issued to ${recipient.name}${recipient.company ? ` (${recipient.company})` : ""}`
     }
+    if (taker) outNote += ` · taken by ${taker}`
 
     const ref = refNo?.trim() || null
     const count = await prisma.$transaction(
@@ -99,6 +105,7 @@ export async function POST(req) {
         targetStoreId: targetStoreId || null,
         projectId: projectId || null,
         recipientId: recipientId || null,
+        takenBy: taker,
         items,
         refNo: ref,
         entryDate: parsedDate,
