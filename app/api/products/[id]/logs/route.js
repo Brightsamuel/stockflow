@@ -1,22 +1,18 @@
-import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
-import { requireSuperAdmin } from "@/lib/auth"
+import { requireUser } from "@/lib/auth"
+import { json, fail, handleError } from "@/lib/http"
+import { buildProductHistory } from "@/lib/history"
 
-export async function DELETE(req, { params }) {
+// GET /api/products/:id/logs?ownerId=…  — a product's balances and full movement history.
+// History is permanent: there is deliberately no way to delete it.
+export async function GET(req, { params }) {
   const { id } = await params
   try {
-    await requireSuperAdmin()
+    await requireUser()
+    const ownerId = new URL(req.url).searchParams.get("ownerId") || null
+    const history = await buildProductHistory(id, ownerId)
+    if (!history) return fail("Product not found", 404)
+    return json(history)
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 403 })
-  }
-
-  try {
-    const product = await prisma.product.findUnique({ where: { id } })
-    if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 })
-
-    const result = await prisma.stockLog.deleteMany({ where: { productId: id } })
-    return NextResponse.json({ success: true, deletedCount: result.count })
-  } catch (e) {
-    return NextResponse.json({ error: "Failed to clear history" }, { status: 500 })
+    return handleError(e, "Failed to load the product's history")
   }
 }

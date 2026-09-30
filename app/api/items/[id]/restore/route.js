@@ -1,48 +1,38 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
 import { requireSuperAdmin } from "@/lib/auth"
+import { json, fail, handleError } from "@/lib/http"
 
+// Puts a removed item back into its store with the quantity it had
 export async function POST(req, { params }) {
   const { id } = await params
-  let user
   try {
-    user = await requireSuperAdmin()
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 403 })
-  }
-
-  try {
+    const user = await requireSuperAdmin()
     const existing = await prisma.stockEntry.findUnique({
       where: { id },
-      include: { store: { include: { category: { select: { trackLogs: true } } } } },
+      include: { store: { include: { category: { select: { trackLogs: true, isSystem: true } } } } },
     })
-    if (!existing) return NextResponse.json({ error: "Entry not found" }, { status: 404 })
-    if (!existing.isDeleted) return NextResponse.json({ error: "Entry is not deleted" }, { status: 400 })
+    if (!existing || existing.store.category.isSystem) return fail("Item not found", 404)
+    if (!existing.isDeleted) return fail("This item hasn't been removed")
 
-    const logUserId = existing.store.category.trackLogs ? user.id : null
-
-    const result = await prisma.$transaction(async (tx) => {
-      const entry = await tx.stockEntry.update({
-        where: { id },
-        data: { isDeleted: false, deletedAt: null },
-      })
+    const entry = await prisma.$transaction(async tx => {
+      const restored = await tx.stockEntry.update({ where: { id }, data: { isDeleted: false, deletedAt: null } })
       await tx.stockLog.create({
         data: {
           storeId: existing.storeId,
           productId: existing.productId,
           ownerId: existing.ownerId,
           type: "RESTORE",
-          quantity: entry.quantity,
-          rate: entry.rate,
-          note: "Entry restored",
-          userId: logUserId,
+          quantity: restored.quantity,
+          rate: restored.rate,
+          adjustment: restored.quantity,
+          note: "Restored to the store",
+          userId: existing.store.category.trackLogs ? user.id : null,
         },
       })
-      return entry
+      return restored
     })
-
-    return NextResponse.json(result)
+    return json(entry)
   } catch (e) {
-    return NextResponse.json({ error: "Failed to restore" }, { status: 500 })
+    return handleError(e, "Failed to restore the item")
   }
 }

@@ -1,17 +1,15 @@
-import prisma from '@/lib/prisma'
-import { getCurrentUser } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import { getCurrentUser } from '@/lib/auth'
+import { isAdminRole } from '@/lib/constants'
+import { listUsers } from '@/lib/users'
 import UsersManager from '@/components/UsersManager'
+
+export const metadata = { title: 'Users' }
 
 export default async function UsersPage() {
   const currentUser = await getCurrentUser()
   if (!currentUser) redirect('/login')
-  if (currentUser.role !== 'ADMIN' && currentUser.role !== 'SUPER_ADMIN') redirect('/')
+  if (!isAdminRole(currentUser.role)) redirect('/')
 
-  const users = await prisma.user.findMany({
-    select: { id: true, username: true, role: true, isActive: true, createdAt: true },
-    orderBy: { createdAt: 'asc' },
-  })
-
-  return <UsersManager initialUsers={users} currentUserId={currentUser.id} currentUserRole={currentUser.role} />
+  return <UsersManager users={await listUsers()} currentUserId={currentUser.id} currentUserRole={currentUser.role} />
 }

@@ -1,0 +1,94 @@
+.shell {
+  min-height: 100vh;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100vh;
+  margin-left: var(--sidebar-width);
+  transition: margin-left 0.18s ease;
+}
+
+.shellCollapsed .main {
+  margin-left: var(--sidebar-collapsed);
+}
+
+/* Phone / tablet: the sidebar becomes a drawer opened from this bar */
+.topbar {
+  display: none;
+}
+
+.overlay {
+  display: none;
+}
+
+.menuButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  color: #e2e8f0;
+}
+
+.menuButton:hover {
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.topbarBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.topbarMark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #f59e0b, #b45309);
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .main,
+  .shellCollapsed .main {
+    margin-left: 0;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--topbar-height);
+    padding: 0 10px;
+    background: var(--nav-bg);
+  }
+
+  .overlayOpen {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    display: block;
+    background: rgba(15, 23, 42, 0.5);
+    animation: fade 0.15s ease-out;
+  }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

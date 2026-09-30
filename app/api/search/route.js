@@ -1,56 +1,45 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
 import { requireUser } from "@/lib/auth"
+import { json, handleError } from "@/lib/http"
 
-// GET /api/search?q=maize&ownerId=<optional>
-// Returns matching products with their store balances and full movement log,
-// limited to one owner's stock when ownerId is given
+// GET /api/search?q=maize[&ownerId=…][&lite=1]
+// lite: names only, for suggestions and Quick find. Otherwise matching products with their
+// live balances (limited to one owner's stock when ownerId is given). The full movement
+// history of a product comes from /api/products/:id/logs.
 export async function GET(req) {
   try {
     await requireUser()
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 401 })
-  }
-
-  try {
     const { searchParams } = new URL(req.url)
     const q = searchParams.get("q")?.trim()
     const ownerId = searchParams.get("ownerId") || null
+    if (!q) return json([])
 
-    if (!q || q.length < 1)
-      return NextResponse.json([])
+    const where = { name: { contains: q, mode: "insensitive" } }
 
-    const byOwner = ownerId ? { ownerId } : {}
+    if (searchParams.get("lite")) {
+      const products = await prisma.product.findMany({
+        where,
+        select: { id: true, name: true, unit: { select: { name: true } } },
+        orderBy: { name: "asc" },
+        take: 8,
+      })
+      return json(products)
+    }
+
     const products = await prisma.product.findMany({
-      where: { name: { contains: q, mode: "insensitive" } },
+      where,
       include: {
         unit: true,
         entries: {
-          where: byOwner,
-          include: {
-            store: {
-              select: { id: true, name: true, category: { select: { name: true, isSystem: true } } },
-            },
-            owner: { select: { id: true, name: true } },
-          },
-        },
-        logs: {
-          where: byOwner,
-          include: {
-            store: { select: { id: true, name: true } },
-            user: { select: { id: true, username: true } },
-            owner: { select: { id: true, name: true } },
-            project: { select: { id: true, name: true } },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 50,
+          where: { isDeleted: false, ...(ownerId && { ownerId }) },
+          select: { id: true, quantity: true, rate: true, store: { select: { category: { select: { isSystem: true } } } } },
         },
       },
-      take: 10,
+      orderBy: { name: "asc" },
+      take: 25,
     })
-
-    return NextResponse.json(products)
+    return json(products)
   } catch (e) {
-    return NextResponse.json({ error: "Search failed" }, { status: 500 })
+    return handleError(e, "Search failed")
   }
 }

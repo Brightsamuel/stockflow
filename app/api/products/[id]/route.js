@@ -1,17 +1,15 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
 import { requireUser } from "@/lib/auth"
+import { json, fail, handleError, httpError } from "@/lib/http"
+import { isAdminRole } from "@/lib/constants"
+import { productHistory } from "@/lib/guards"
 import { PRODUCT_WITH_BALANCES, parseAmount, setOpeningBalance } from "@/lib/openingBalance"
 
+// A product can only be deleted while nothing has happened to it beyond an unissued opening balance
 export async function DELETE(req, { params }) {
   const { id } = await params
   try {
     await requireUser()
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 401 })
-  }
-
-  try {
     const product = await prisma.product.findUnique({
       where: { id },
       include: {
@@ -19,84 +17,55 @@ export async function DELETE(req, { params }) {
         _count: { select: { transfers: true } },
       },
     })
-    if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 })
+    if (!product) return fail("Product not found", 404)
 
     const openingEntries = product.entries.filter(e => e.store.category.isSystem)
     if (product.entries.length > openingEntries.length)
-      return NextResponse.json(
-        { error: "Cannot delete — product exists in store inventories" },
-        { status: 400 }
-      )
+      return fail("This product is held in store inventories, so it can't be deleted", 409)
     if (product._count.transfers > 0)
-      return NextResponse.json(
-        { error: "Cannot delete — stock of this product has already been issued" },
-        { status: 400 }
-      )
+      return fail("Stock of this product has already been issued, so it can't be deleted", 409)
+    if ((await productHistory(prisma, id)) > 0) return fail("This product has movement history, so it can't be deleted", 409)
 
     // Only an unissued opening balance is left; remove it along with the product
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async tx => {
       for (const entry of openingEntries) {
         await tx.stockLog.deleteMany({ where: { productId: id, storeId: entry.storeId } })
         await tx.stockEntry.delete({ where: { id: entry.id } })
       }
       await tx.product.delete({ where: { id } })
     })
-    return NextResponse.json({ success: true })
+    return json({ success: true })
   } catch (e) {
-    console.error(e)
-    return NextResponse.json({ error: "Failed to delete product" }, { status: 500 })
+    return handleError(e, "Failed to delete product")
   }
 }
 
+// Body: { name?, unitId?, openingQty?, openingRate? } — the opening balance is admin-only
 export async function PATCH(req, { params }) {
   const { id } = await params
-  let user
   try {
-    user = await requireUser()
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 401 })
-  }
-
-  try {
+    const user = await requireUser()
     const body = await req.json()
-    const { name, unitId } = body
     const openingQty = parseAmount(body.openingQty, "Opening qty")
     const openingRate = parseAmount(body.openingRate, "Rate")
 
     const data = {}
-    if (name?.trim()) data.name = name.trim()
-    if (unitId) data.unitId = unitId
+    if (body.name?.trim()) data.name = body.name.trim()
+    if (body.unitId) data.unitId = body.unitId
     const changesOpening = openingQty !== undefined || openingRate !== undefined
-    if (!Object.keys(data).length && !changesOpening)
-      return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
+    if (!Object.keys(data).length && !changesOpening) return fail("Nothing to update")
+    if (changesOpening && !isAdminRole(user.role)) return fail("Only an admin can change the opening balance", 403)
 
-    const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN"
-    if (changesOpening && !isAdmin)
-      return NextResponse.json({ error: "Only admins can change the opening balance" }, { status: 403 })
-
-    const product = await prisma.$transaction(async (tx) => {
+    const product = await prisma.$transaction(async tx => {
       const existing = await tx.product.findUnique({ where: { id } })
-      if (!existing) {
-        const err = new Error("Product not found")
-        err.status = 404
-        throw err
-      }
+      if (!existing) throw httpError("Product not found", 404)
       if (Object.keys(data).length) await tx.product.update({ where: { id }, data })
       if (changesOpening)
-        await setOpeningBalance(
-          tx, id,
-          openingQty ?? existing.openingQty,
-          openingRate ?? existing.openingRate,
-          user.id,
-        )
+        await setOpeningBalance(tx, id, openingQty ?? existing.openingQty, openingRate ?? existing.openingRate, user.id)
       return tx.product.findUnique({ where: { id }, include: PRODUCT_WITH_BALANCES })
     })
-    return NextResponse.json(product)
+    return json(product)
   } catch (e) {
-    if (e.code === "P2002")
-      return NextResponse.json({ error: "Product name already exists" }, { status: 409 })
-    if (e.status) return NextResponse.json({ error: e.message }, { status: e.status })
-    console.error(e)
-    return NextResponse.json({ error: "Failed to update product" }, { status: 500 })
+    return handleError(e, "Failed to update product", { P2002: "A product with that name already exists" })
   }
 }

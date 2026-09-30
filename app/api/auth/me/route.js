@@ -1,8 +1,8 @@
 import { getCurrentUser } from "@/lib/auth"
-import { NextResponse } from "next/server"
+import { json } from "@/lib/http"
 
 export async function GET() {
   const user = await getCurrentUser()
-  if (!user) return NextResponse.json(null)
-  return NextResponse.json({ id: user.id, username: user.username, role: user.role })
+  if (!user) return json(null)
+  return json({ id: user.id, username: user.username, role: user.role })
 }

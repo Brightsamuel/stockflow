@@ -1,32 +1,25 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
-import { requireUser, verifyPassword, hashPassword } from "@/lib/auth"
+import { requireUser, verifyPassword, hashPassword, createSession } from "@/lib/auth"
+import { json, fail, handleError } from "@/lib/http"
+import { MIN_PASSWORD_LENGTH } from "@/lib/constants"
 
-// Change the signed-in user's own password
+// Change the signed-in user's own password. Other sessions end; this one is renewed.
 export async function POST(req) {
-  let user
   try {
-    user = await requireUser()
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 401 })
-  }
-
-  try {
+    const user = await requireUser()
     const { currentPassword, newPassword } = await req.json()
-    if (!currentPassword || !newPassword)
-      return NextResponse.json({ error: "Current and new password required" }, { status: 400 })
-    if (newPassword.length < 4)
-      return NextResponse.json({ error: "Password must be at least 4 characters" }, { status: 400 })
-    if (!verifyPassword(currentPassword, user.passwordHash))
-      return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 })
+    if (!currentPassword || !newPassword) return fail("Enter your current and new password")
+    if (newPassword.length < MIN_PASSWORD_LENGTH)
+      return fail(`The new password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+    if (!verifyPassword(currentPassword, user.passwordHash)) return fail("Your current password is incorrect")
 
-    await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash: hashPassword(newPassword) },
+      data: { passwordHash: hashPassword(newPassword), sessionVersion: { increment: 1 } },
     })
-    return NextResponse.json({ success: true })
+    await createSession(updated)
+    return json({ success: true })
   } catch (e) {
-    console.error(e)
-    return NextResponse.json({ error: "Failed to change password" }, { status: 500 })
+    return handleError(e, "Failed to change password")
   }
 }

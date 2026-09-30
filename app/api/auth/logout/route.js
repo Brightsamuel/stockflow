@@ -1,7 +1,7 @@
 import { destroySession } from "@/lib/auth"
-import { NextResponse } from "next/server"
+import { json } from "@/lib/http"
 
 export async function POST() {
   await destroySession()
-  return NextResponse.json({ success: true })
+  return json({ success: true })
 }

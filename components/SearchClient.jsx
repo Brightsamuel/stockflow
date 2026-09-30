@@ -1,323 +1,288 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useConfirm } from '@/components/ConfirmProvider'
+import Link from 'next/link'
+import { IconAlertCircle, IconArrowLeft, IconHistory, IconPackage, IconSearch } from '@tabler/icons-react'
+import PageHeader from '@/components/ui/PageHeader'
+import ExportBar from '@/components/ui/ExportBar'
+import ReportDocument from '@/components/ui/ReportDocument'
+import EmptyState from '@/components/ui/EmptyState'
+import { MovementBadge } from '@/components/ui/Badge'
+import { api } from '@/lib/api'
 import { NO_OWNER } from '@/lib/owners'
-import styles from '@/dashboard/store.module.css'
+import { fmtDate, fmtMoney, fmtNum, fmtSigned, plural } from '@/lib/format'
+import { withTotals } from '@/lib/tables'
+import { exportExcel, exportPdf, fileSafe } from '@/lib/exporters'
+import ui from '@/styles/ui.module.css'
 
-function fmt(n) {
-  return Number(n).toLocaleString()
+const BALANCE_COLS = [
+  { label: 'Store', value: r => r.store, strong: true },
+  { label: 'Category', value: r => r.category, muted: true },
+  { label: 'Owner', value: r => r.owner },
+  { label: 'Quantity', value: r => r.quantity, num: true, total: true },
+  { label: 'Rate (UGX)', value: r => r.rate, num: true },
+  { label: 'Value (UGX)', value: r => r.value, num: true, total: true },
+]
+
+const MOVEMENT_COLS = [
+  { label: 'Date', value: r => fmtDate(r.date), nowrap: true },
+  { label: 'Type', value: r => r.type, render: r => <MovementBadge kind={r.kind} /> },
+  { label: 'Store', value: r => r.store },
+  { label: 'Owner', value: r => r.owner },
+  { label: 'Change', value: r => r.change, num: true, format: fmtSigned },
+  { label: 'Rate', value: r => r.rate, num: true },
+  { label: 'Value (UGX)', value: r => r.value || null, num: true },
+  {
+    label: 'Ref no.',
+    value: r => r.refNo,
+    nowrap: true,
+    render: r => (r.refNo ? <Link href={`/notes?ref=${encodeURIComponent(r.refNo)}`} className={`${ui.link} ${ui.mono}`}>{r.refNo}</Link> : '—'),
+  },
+  { label: 'Details', value: r => r.note, muted: true },
+  { label: 'Taken by', value: r => r.takenBy },
+  { label: 'By', value: r => r.by, muted: true },
+]
+
+function historyUrl(productId, ownerId) {
+  return `/api/products/${productId}/logs${ownerId ? `?ownerId=${encodeURIComponent(ownerId)}` : ''}`
 }
 
-function fmtDate(date) {
-  return new Date(date).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-}
-
-function ownerName(owner) {
-  return owner && owner.id !== NO_OWNER ? owner.name : null
-}
-
-// Friendlier label for a log type; stock out to a project is "used", to an external party "issued"
-function kindLabel(log) {
-  if (log.kind === 'TRANSFER_OUT' && log.projectId) return 'USED'
-  if (log.kind === 'TRANSFER_OUT' && log.recipientId) return 'ISSUED'
-  return log.kind.replace('_', ' ')
-}
-
-export default function SearchClient({ currentUser, owners = [] }) {
-  const router = useRouter()
-  const { confirm, notify } = useConfirm()
-  const [q, setQ] = useState('')
-  const [results, setResults] = useState([])
+// Product history: search a product, then see its balances and every movement, and print,
+// save as PDF or export them. History is permanent; nothing here can delete it.
+export default function SearchClient({ owners = [], settings, initialHistory = null }) {
+  const [q, setQ] = useState(initialHistory?.product.name ?? '')
   const [suggestions, setSuggestions] = useState([])
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [selected, setSelected] = useState(null)
+  const [results, setResults] = useState(null)
+  const [history, setHistory] = useState(initialHistory)
+  const [ownerId, setOwnerId] = useState('')
   const [loading, setLoading] = useState(false)
-  const [clearError, setClearError] = useState('')
-  const [ownerFilter, setOwnerFilter] = useState('')
+  const [error, setError] = useState('')
 
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN'
-
-  function searchUrl(term, owner = ownerFilter) {
-    const params = new URLSearchParams({ q: term })
-    if (owner) params.set('ownerId', owner)
-    return `/api/search?${params}`
-  }
-
-  // Re-run whatever is on screen for the newly chosen owner
-  async function changeOwner(owner) {
-    setOwnerFilter(owner)
-    const term = selected?.name ?? q.trim()
-    if (!term || (!selected && results.length === 0)) return
-    setLoading(true)
-    try {
-      const res = await fetch(searchUrl(term, owner))
-      const data = await res.json()
-      const list = Array.isArray(data) ? data : []
-      if (selected) setSelected(list.find(p => p.id === selected.id) ?? { ...selected, entries: [], logs: [] })
-      else setResults(list)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const term = q.trim()
 
   useEffect(() => {
-    if (!q.trim() || q.trim().length < 2) {
-      setSuggestions([])
-      return undefined
-    }
-
+    if (term.length < 2) return undefined
     const timer = setTimeout(() => {
-      const params = new URLSearchParams({ q: q.trim() })
-      if (ownerFilter) params.set('ownerId', ownerFilter)
-      fetch(`/api/search?${params}`)
-        .then(res => res.json())
-        .then(data => setSuggestions(Array.isArray(data) ? data.slice(0, 6) : []))
+      api(`/api/search?lite=1&q=${encodeURIComponent(term)}`)
+        .then(data => setSuggestions(Array.isArray(data) ? data : []))
         .catch(() => setSuggestions([]))
-    }, 300)
-
+    }, 250)
     return () => clearTimeout(timer)
-  }, [q, ownerFilter])
+  }, [term])
 
-  async function runSearch(e) {
-    e.preventDefault()
-    if (!q.trim()) return
-    setLoading(true)
+  // Keeps the address bar in step (so the page can be bookmarked or refreshed) without a reload
+  function setAddress(productId) {
+    window.history.replaceState(null, '', productId ? `/search?product=${productId}` : '/search')
+  }
+
+  async function openProduct(productId, owner = ownerId) {
+    setLoading(true); setError(''); setShowSuggestions(false)
     try {
-      const res = await fetch(searchUrl(q.trim()))
-      const data = await res.json()
+      const data = await api(historyUrl(productId, owner))
+      setHistory(data)
+      setQ(data.product.name)
+      setAddress(productId)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runSearch(e, owner = ownerId) {
+    e?.preventDefault()
+    if (!term) return
+    setLoading(true); setError(''); setShowSuggestions(false)
+    try {
+      const params = new URLSearchParams({ q: term })
+      if (owner) params.set('ownerId', owner)
+      const data = await api(`/api/search?${params}`)
       setResults(Array.isArray(data) ? data : [])
-      setSelected(null)
-      setShowSuggestions(false)
+      setHistory(null)
+      setAddress(null)
+    } catch (err) {
+      setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  async function clearHistory() {
-    if (!selected || !isSuperAdmin) return
-    const count = buildTimeline(selected).length
-    const ok = await confirm({
-      title: 'Clear history',
-      message: `This will permanently delete all ${count} history entries for "${selected.name}" across every store. Current stock balances are not affected, but this product's opening balance in future reports will reset to zero from this point forward. This cannot be undone.`,
-      requireText: selected.name,
-      confirmLabel: 'Clear history',
-      danger: true,
-    })
-    if (!ok) return
-
-    setLoading(true)
-    setClearError('')
-    try {
-      const res = await fetch(`/api/products/${selected.id}/logs`, { method: 'DELETE' })
-      const data = await res.json()
-      if (!res.ok) { await notify(data.error || 'Failed to clear history'); return }
-      await notify(`Cleared ${data.deletedCount} history entries.`)
-      setSelected(null)
-      setResults([])
-      setQ('')
-    } catch (error) {
-      setClearError(error.message)
-    } finally {
-      setLoading(false)
-    }
+  function changeOwner(next) {
+    setOwnerId(next)
+    if (history) openProduct(history.product.id, next)
+    else if (results) runSearch(null, next)
   }
 
-  // Merge logs + transfers into one chronological movement feed
-  function buildTimeline(product) {
-    const fromLogs = product.logs.map(l => ({
-      kind: l.type,
-      projectId: l.projectId,
-      recipientId: l.recipientId,
-      owner: ownerName(l.owner),
-      quantity: l.quantity,
-      rate: l.rate,
-      note: l.note,
-      store: l.store.name,
-      user: l.user?.username || null,
-      createdAt: l.entryDate,
-    }))
-    return fromLogs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  function backToResults() {
+    setHistory(null)
+    setAddress(null)
+  }
+
+  const ownerLabel = ownerId === NO_OWNER ? 'No owner' : owners.find(o => o.id === ownerId)?.name
+  const subtitle = [
+    `Unit: ${history?.product.unit ?? ''}`,
+    ownerLabel && `Owner: ${ownerLabel}`,
+    `As at ${fmtDate(new Date())}`,
+  ].filter(Boolean).join(' · ')
+  const sections = history ? withTotals([
+    { title: 'Balances', sheet: 'Balances', cols: BALANCE_COLS, rows: history.balances, empty: 'Not held in any store right now.' },
+    { title: 'Movements', sheet: 'Movements', cols: MOVEMENT_COLS, rows: history.rows, empty: 'No movements recorded yet.', totals: false },
+  ]) : []
+  const exportArgs = history && {
+    title: `Product history · ${history.product.name}`,
+    subtitle,
+    settings,
+    fileBase: `history-${fileSafe(history.product.name)}`,
+    sections,
   }
 
   return (
     <>
-      <div className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <h2 className={styles.storeName}>Product history</h2>
-          <span className={styles.storeMeta}>Search a product to see its full movement log</span>
-        </div>
-      </div>
+      <PageHeader title="Product history" subtitle="Every movement of a product across all stores, from the opening balance to today" />
 
-      <div className={styles.content}>
-        {/* <div style={{ marginBottom: 12 }}>
-          <button className={styles.btnGhost} onClick={() => router.back()}>
-            <i className="ti ti-arrow-left" /> Back
-          </button>
-        </div> */}
-
-        <form onSubmit={runSearch} className={styles.field} style={{ maxWidth: 640, marginBottom: 24 }}>
-          <label>Product name</label>
-          <div style={{ position: 'relative' }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={q}
-                onChange={e => { setQ(e.target.value); setShowSuggestions(true) }}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="e.g. Book"
-              />
-              <select
-                value={ownerFilter}
-                onChange={e => changeOwner(e.target.value)}
-                title="Filter by stock owner"
-                style={{ maxWidth: 180 }}
-              >
-                <option value="">All owners</option>
-                <option value={NO_OWNER}>No owner</option>
-                {owners.map(o => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-              <button type="submit" className={styles.btnPrimary} disabled={loading}>
-                {loading ? '…' : 'Search'}
+      <div className={ui.page}>
+        <form className={ui.card} onSubmit={runSearch} data-no-print>
+          <div className={ui.cardBody}>
+            <div className={`${ui.row} ${ui.rowEnd}`}>
+              <div className={`${ui.field} ${ui.toolbarSearch}`} style={{ maxWidth: 520 }}>
+                <span className={ui.label}>Product</span>
+                <div className={ui.inputWrap}>
+                  <span className={ui.inputIcon}><IconSearch size={16} /></span>
+                  <input
+                    className={`${ui.input} ${ui.inputWithIcon}`}
+                    value={q}
+                    onChange={e => { setQ(e.target.value); setShowSuggestions(true) }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setShowSuggestions(false)}
+                    onKeyDown={e => { if (e.key === 'Escape') setShowSuggestions(false) }}
+                    placeholder="Start typing a product name, e.g. cement"
+                    aria-label="Product name"
+                    autoFocus={!initialHistory}
+                  />
+                  {showSuggestions && term.length >= 2 && suggestions.length > 0 && (
+                    <div className={ui.suggest}>
+                      {suggestions.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className={ui.suggestItem}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => openProduct(p.id)}
+                        >
+                          <span className={ui.suggestTop}><strong>{p.name}</strong><span className={ui.suggestMeta}>{p.unit.name}</span></span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <label className={ui.field} style={{ width: 200 }}>
+                <span className={ui.label}>Stock owner</span>
+                <select className={ui.input} value={ownerId} onChange={e => changeOwner(e.target.value)}>
+                  <option value="">All owners</option>
+                  <option value={NO_OWNER}>No owner</option>
+                  {owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              </label>
+              <button type="submit" className={`${ui.btn} ${ui.btnPrimary}`} disabled={loading || !term}>
+                {loading ? <span className={ui.spinner} /> : <IconSearch size={16} />} Search
               </button>
             </div>
-
-            {showSuggestions && suggestions.length > 0 && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
-                background: 'var(--surface-1)', border: '1px solid var(--border-strong)',
-                borderRadius: 6, marginTop: 4, maxHeight: 220, overflowY: 'auto',
-              }}>
-                {suggestions.map(p => (
-                  <div
-                    key={p.id}
-                    onClick={() => { setSelected(p); setShowSuggestions(false); setQ(p.name) }}
-                    onMouseDown={e => e.preventDefault()}
-                    style={{ padding: '8px 12px', cursor: 'pointer' }}
-                  >
-                    {p.name} <span className={styles.fieldHint}>({p.unit.name})</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </form>
 
-        {!selected && results.length > 0 && (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Unit</th>
-                  <th>Stores holding it</th>
-                  <th>Total balance</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map(p => {
-                  const totalBalance = p.entries.reduce((s, e) => s + e.quantity, 0)
-                  return (
-                    <tr key={p.id}>
-                      <td className={styles.itemName}>{p.name}</td>
-                      <td className={styles.mono}>{p.unit.name}</td>
-                      <td className={styles.mono}>{p.entries.length}</td>
-                      <td className={styles.mono}>{fmt(totalBalance)}</td>
-                      <td>
-                        <button className={styles.btnGhost} onClick={() => setSelected(p)}>
-                          View history
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        {error && (
+          <div className={`${ui.alert} ${ui.alertDanger}`} data-no-print>
+            <IconAlertCircle size={17} />
+            <span>{error}</span>
           </div>
         )}
 
-        {!loading && q && results.length === 0 && (
-          <p className={styles.fieldHint}>Results for "{q}".</p>
+        {!history && results && (
+          <section className={`${ui.card} ${ui.cardFlush}`} data-no-print>
+            <div className={ui.cardHeader}>
+              <h2 className={ui.cardTitle}><IconPackage size={17} /> {plural(results.length, 'product')} matching &quot;{term}&quot;</h2>
+            </div>
+            {results.length === 0 ? (
+              <EmptyState icon={IconSearch} title="No products found">Try a shorter or different name.</EmptyState>
+            ) : (
+              <div className={ui.tableWrap}>
+                <table className={ui.table}>
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Unit</th>
+                      <th className={ui.num}>Stores holding it</th>
+                      <th className={ui.num}>Total balance</th>
+                      <th className={ui.num}>Value (UGX)</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map(p => {
+                      const balance = p.entries.reduce((s, e) => s + e.quantity, 0)
+                      const value = p.entries.reduce((s, e) => s + e.quantity * e.rate, 0)
+                      const stores = p.entries.filter(e => !e.store.category.isSystem).length
+                      return (
+                        <tr key={p.id}>
+                          <td className={ui.cellStrong}>{p.name}</td>
+                          <td className={ui.cellMuted}>{p.unit.name}</td>
+                          <td className={ui.num}>{fmtNum(stores)}</td>
+                          <td className={ui.num}>{fmtNum(balance)}</td>
+                          <td className={ui.num}>{fmtNum(value)}</td>
+                          <td>
+                            <div className={ui.cellActions}>
+                              <button type="button" className={`${ui.btn} ${ui.btnSecondary} ${ui.btnSm}`} onClick={() => openProduct(p.id)}>
+                                <IconHistory size={15} /> View history
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         )}
 
-        {selected && (
+        {!history && !results && (
+          <section className={ui.card} data-no-print>
+            <EmptyState icon={IconHistory} title="Look up a product">
+              Search for a product to see where it is held and every movement it has had: received, transferred, used on
+              projects, issued and adjusted. The history can be printed, saved as a PDF or exported to Excel.
+            </EmptyState>
+          </section>
+        )}
+
+        {history && (
           <>
-            <button className={styles.btnGhost} onClick={() => setSelected(null)} style={{ marginBottom: 16 }}>
-              <i className="ti ti-arrow-left" /> Back to results
-            </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
-              <h3>{selected.name}</h3>
-              {isSuperAdmin && (
-                <button className={styles.btnGhost} onClick={clearHistory} disabled={loading}>
-                  <i className="ti ti-trash" /> {loading ? 'Clearing…' : 'Clear history'}
+            <div className={ui.rowBetween} data-no-print>
+              {results ? (
+                <button type="button" className={`${ui.btn} ${ui.btnGhost} ${ui.btnSm}`} onClick={backToResults}>
+                  <IconArrowLeft size={16} /> Back to results
                 </button>
-              )}
-            </div>
-            {clearError && <p className={styles.errorMsg}>{clearError}</p>}
-            <p className={styles.storeMeta} style={{ marginBottom: 16 }}>
-              Unit: {selected.unit.name}
-            </p>
-
-            <div className={styles.metrics} style={{ marginBottom: 24 }}>
-              {selected.entries.map(entry => (
-                <div key={entry.id} className={styles.metric}>
-                  <div className={styles.metricLabel}>
-                    {entry.store.category.isSystem ? entry.store.name : `${entry.store.name} (${entry.store.category.name})`}
-                    {ownerName(entry.owner) && <> · {ownerName(entry.owner)}</>}
-                  </div>
-                  <div className={styles.metricValue}>{fmt(entry.quantity)} {selected.unit.name}</div>
-                </div>
-              ))}
-              {selected.entries.length === 0 && (
-                <p className={styles.fieldHint}>Not currently held in any store.</p>
-              )}
+              ) : <span />}
+              <div className={ui.chips}>
+                <span className={ui.chip}>Balance <strong>{fmtNum(history.totalQuantity)} {history.product.unit}</strong></span>
+                <span className={ui.chip}>Value <strong>{fmtMoney(history.totalValue)}</strong></span>
+                <span className={ui.chip}>Stores <strong>{fmtNum(history.balances.filter(b => b.storeId).length)}</strong></span>
+              </div>
             </div>
 
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>Store</th>
-                    <th>Owner</th>
-                    <th>Quantity</th>
-                    <th>Rate</th>
-                    <th>By</th>
-                    <th>Note</th>
-                    <th>Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {buildTimeline(selected).map((entry, i) => (
-                    <tr key={i}>
-                      <td>
-                        <span className={
-                          entry.kind === 'IN' ? styles.badgeOk :
-                          entry.kind === 'TRANSFER_OUT' ? styles.badgeLow : styles.badgeOk
-                        }>
-                          {kindLabel(entry)}
-                        </span>
-                      </td>
-                      <td>{entry.store}</td>
-                      <td className={entry.owner ? undefined : styles.fieldHint}>{entry.owner || '—'}</td>
-                      <td className={styles.mono}>{fmt(entry.quantity)}</td>
-                      <td className={styles.mono}>{fmt(entry.rate)}</td>
-                      <td className={styles.fieldHint}>{entry.user || '—'}</td>
-                      <td className={styles.fieldHint}>{entry.note || '—'}</td>
-                      <td className={styles.mono}>{fmtDate(entry.createdAt)}</td>
-                    </tr>
-                  ))}
-                  {buildTimeline(selected).length === 0 && (
-                    <tr><td colSpan={8} className={styles.fieldHint}>No movement recorded yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <ExportBar
+              info={<strong className={ui.strong}>{plural(history.rows.length, 'movement')}</strong>}
+              onPdf={() => exportPdf(exportArgs)}
+              onExcel={() => exportExcel(exportArgs)}
+            />
+
+            <ReportDocument
+              title={`Product history · ${history.product.name}`}
+              subtitle={subtitle}
+              settings={settings}
+              sections={sections}
+            />
           </>
         )}
       </div>

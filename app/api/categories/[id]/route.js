@@ -1,41 +1,44 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
+import { requireAdmin } from "@/lib/auth"
+import { json, fail, handleError } from "@/lib/http"
 
+// Body: { name? } (admins), { trackLogs? } (Super admins only)
 export async function PATCH(req, { params }) {
   const { id } = await params
   try {
+    const user = await requireAdmin()
     const { name, trackLogs } = await req.json()
     const data = {}
     if (name?.trim()) data.name = name.trim()
-    if (trackLogs != null) data.trackLogs = trackLogs
-    if (!Object.keys(data).length)
-      return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
+    if (trackLogs != null) {
+      if (user.role !== "SUPER_ADMIN") return fail("Only a Super admin can turn activity tracking on or off", 403)
+      data.trackLogs = Boolean(trackLogs)
+    }
+    if (!Object.keys(data).length) return fail("Nothing to update")
 
-    const category = await prisma.category.update({ where: { id }, data })
-    return NextResponse.json(category)
+    const existing = await prisma.category.findUnique({ where: { id }, select: { isSystem: true } })
+    if (!existing || existing.isSystem) return fail("Category not found", 404)
+
+    return json(await prisma.category.update({ where: { id }, data }))
   } catch (e) {
-    if (e.code === "P2002")
-      return NextResponse.json({ error: "Category already exists" }, { status: 409 })
-    return NextResponse.json({ error: "Failed to rename category" }, { status: 500 })
+    return handleError(e, "Failed to update category", { P2002: "A category with that name already exists" })
   }
 }
 
 export async function DELETE(req, { params }) {
   const { id } = await params
   try {
-    const cat = await prisma.category.findUnique({
+    await requireAdmin()
+    const category = await prisma.category.findUnique({
       where: { id },
       include: { _count: { select: { stores: true } } },
     })
-    if (!cat) return NextResponse.json({ error: "Not found" }, { status: 404 })
-    if (cat._count.stores > 0)
-      return NextResponse.json(
-        { error: "Remove all stores in this category first" },
-        { status: 400 }
-      )
+    if (!category || category.isSystem) return fail("Category not found", 404)
+    if (category._count.stores > 0) return fail("Remove the stores in this category first")
+
     await prisma.category.delete({ where: { id } })
-    return NextResponse.json({ success: true })
+    return json({ success: true })
   } catch (e) {
-    return NextResponse.json({ error: "Failed to delete" }, { status: 500 })
+    return handleError(e, "Failed to delete category")
   }
 }

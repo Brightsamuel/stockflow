@@ -1,69 +1,107 @@
 'use client'
 import { useState } from 'react'
+import { IconAlertCircle, IconKey, IconShieldLock, IconUserCircle } from '@tabler/icons-react'
+import PageHeader from '@/components/ui/PageHeader'
+import Card from '@/components/ui/Card'
+import Field from '@/components/ui/Field'
+import Badge from '@/components/ui/Badge'
 import PasswordInput from '@/components/PasswordInput'
-import styles from '@/dashboard/store.module.css'
+import { useConfirm } from '@/components/ConfirmProvider'
+import { api } from '@/lib/api'
+import { MIN_PASSWORD_LENGTH, ROLE_LABEL } from '@/lib/constants'
+import { fmtDate, initials } from '@/lib/format'
+import ui from '@/styles/ui.module.css'
 
-export default function ChangePasswordForm({ username }) {
+const ROLE_TONE = { STANDARD: 'neutral', ADMIN: 'info', SUPER_ADMIN: 'brand' }
+
+export default function ChangePasswordForm({ user }) {
+  const { toast } = useConfirm()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
+
+  const tooShort = newPassword.length > 0 && newPassword.length < MIN_PASSWORD_LENGTH
+  const mismatch = confirmPassword.length > 0 && confirmPassword !== newPassword
 
   async function submit(e) {
     e.preventDefault()
-    setError(''); setSaved(false)
-    if (!currentPassword || !newPassword) { setError('Fill in all fields.'); return }
-    if (newPassword !== confirmPassword) { setError('New passwords do not match.'); return }
+    setError('')
+    if (!currentPassword || !newPassword) { setError('Fill in every field.'); return }
+    if (newPassword.length < MIN_PASSWORD_LENGTH) { setError(`The new password must be at least ${MIN_PASSWORD_LENGTH} characters.`); return }
+    if (newPassword !== confirmPassword) { setError("The new passwords don't match."); return }
 
-    setLoading(true)
+    setSaving(true)
     try {
-      const res = await fetch('/api/auth/password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      await api('/api/auth/password', { method: 'POST', body: { currentPassword, newPassword } })
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('')
-      setSaved(true)
+      toast('Password changed. Any other devices have been signed out.')
     } catch (err) {
       setError(err.message)
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
   return (
     <>
-      <div className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <h2 className={styles.storeName}>My account</h2>
-          <span className={styles.storeMeta}>Signed in as {username}</span>
+      <PageHeader title="My account" subtitle="Your profile and sign-in details" />
+      <div className={`${ui.page} ${ui.pageMedium}`}>
+        <div className={ui.split}>
+          <form onSubmit={submit}>
+            <Card
+              title="Change password"
+              icon={IconKey}
+              subtitle="Changing it signs you out on every other device"
+              footer={(
+                <button type="submit" className={`${ui.btn} ${ui.btnPrimary}`} disabled={saving}>
+                  {saving ? <><span className={ui.spinner} /> Saving…</> : 'Change password'}
+                </button>
+              )}
+            >
+              <div className={ui.form}>
+                <Field label="Current password" required>
+                  <PasswordInput value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} autoFocus />
+                </Field>
+                <Field
+                  label="New password"
+                  required
+                  hint={tooShort ? `${MIN_PASSWORD_LENGTH - newPassword.length} more character${MIN_PASSWORD_LENGTH - newPassword.length === 1 ? '' : 's'} needed` : `At least ${MIN_PASSWORD_LENGTH} characters. A short phrase is easier to remember than random symbols.`}
+                >
+                  <PasswordInput value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="new-password" />
+                </Field>
+                <Field label="Confirm new password" required hint={mismatch ? "Doesn't match the new password yet" : undefined}>
+                  <PasswordInput value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" />
+                </Field>
+                {error && (
+                  <div className={`${ui.alert} ${ui.alertDanger}`}>
+                    <IconAlertCircle size={17} />
+                    <span>{error}</span>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </form>
+
+          <Card title="Profile" icon={IconUserCircle}>
+            <div className={ui.stack}>
+              <div className={ui.identity}>
+                <span className={`${ui.avatar} ${ui.avatarLg}`}>{initials(user.username)}</span>
+                <div>
+                  <div className={ui.strong}>{user.username}</div>
+                  <Badge tone={ROLE_TONE[user.role]}>{ROLE_LABEL[user.role] ?? user.role}</Badge>
+                </div>
+              </div>
+              <div className={ui.divider} />
+              <p className={ui.hint}>Member since {fmtDate(user.createdAt)}.</p>
+              <div className={`${ui.alert} ${ui.alertNeutral}`}>
+                <IconShieldLock size={17} />
+                <span>After 5 wrong passwords in a row the account locks for 15 minutes. An admin can unlock it sooner from Users.</span>
+              </div>
+            </div>
+          </Card>
         </div>
-      </div>
-
-      <div className={styles.content}>
-        <form onSubmit={submit} className={styles.field} style={{ maxWidth: 480 }}>
-          <h3 style={{ marginBottom: 8 }}>Change password</h3>
-
-          <label>Current password</label>
-          <PasswordInput value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} autoFocus />
-
-          <label style={{ marginTop: 12 }}>New password</label>
-          <PasswordInput value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="new-password" />
-
-          <label style={{ marginTop: 12 }}>Confirm new password</label>
-          <PasswordInput value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" />
-
-          {error && <p className={styles.errorMsg}>{error}</p>}
-          {saved && <p className={styles.fieldHint} style={{ color: 'var(--success)' }}>Password changed.</p>}
-
-          <button type="submit" className={styles.btnPrimary} disabled={loading} style={{ marginTop: 12 }}>
-            {loading ? 'Saving…' : 'Change password'}
-          </button>
-        </form>
       </div>
     </>
   )

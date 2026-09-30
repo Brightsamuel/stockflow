@@ -1,32 +1,29 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
+import { requireUser, requireAdmin } from "@/lib/auth"
+import { json, fail, handleError } from "@/lib/http"
 
 export async function GET() {
-  const categories = await prisma.category.findMany({
-    where: { isSystem: false },
-    include: {
-      stores: {
-        include: { _count: { select: { entries: true } } },
-        orderBy: { createdAt: "asc" },
-      },
-    },
-    orderBy: { createdAt: "asc" },
-  })
-  return NextResponse.json(categories)
+  try {
+    await requireUser()
+    const categories = await prisma.category.findMany({
+      where: { isSystem: false },
+      include: { stores: { select: { id: true, name: true }, orderBy: { createdAt: "asc" } } },
+      orderBy: { createdAt: "asc" },
+    })
+    return json(categories)
+  } catch (e) {
+    return handleError(e, "Failed to load categories")
+  }
 }
 
 export async function POST(req) {
   try {
+    await requireAdmin()
     const { name } = await req.json()
-    if (!name?.trim())
-      return NextResponse.json({ error: "Name required" }, { status: 400 })
-    const category = await prisma.category.create({
-      data: { name: name.trim(), trackLogs: true },
-    })
-    return NextResponse.json(category, { status: 201 })
+    if (!name?.trim()) return fail("Enter a category name")
+    const category = await prisma.category.create({ data: { name: name.trim(), trackLogs: true } })
+    return json(category, 201)
   } catch (e) {
-    if (e.code === "P2002")
-      return NextResponse.json({ error: "Category already exists" }, { status: 409 })
-    return NextResponse.json({ error: "Failed to create category" }, { status: 500 })
+    return handleError(e, "Failed to create category", { P2002: "A category with that name already exists" })
   }
 }

@@ -1,25 +1,23 @@
-// app/api/items/[id]/permanent/route.js
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
 import { requireSuperAdmin } from "@/lib/auth"
+import { json, fail, handleError } from "@/lib/http"
 
+// Deletes a removed item's row for good (Super admin). Its movement history is kept:
+// the logs belong to the product and store, not to this row.
 export async function DELETE(req, { params }) {
   const { id } = await params
   try {
     await requireSuperAdmin()
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 403 })
-  }
-
-  try {
-    const existing = await prisma.stockEntry.findUnique({ where: { id } })
-    if (!existing) return NextResponse.json({ error: "Entry not found" }, { status: 404 })
-    if (!existing.isDeleted)
-      return NextResponse.json({ error: "Item must be soft-deleted first" }, { status: 400 })
+    const existing = await prisma.stockEntry.findUnique({
+      where: { id },
+      include: { store: { select: { category: { select: { isSystem: true } } } } },
+    })
+    if (!existing || existing.store.category.isSystem) return fail("Item not found", 404)
+    if (!existing.isDeleted) return fail("Remove the item from the store first")
 
     await prisma.stockEntry.delete({ where: { id } })
-    return NextResponse.json({ success: true })
+    return json({ success: true })
   } catch (e) {
-    return NextResponse.json({ error: "Failed to permanently delete" }, { status: 500 })
+    return handleError(e, "Failed to delete the item")
   }
 }

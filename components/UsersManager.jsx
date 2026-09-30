@@ -1,237 +1,297 @@
 'use client'
-import { Fragment, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useConfirm } from '@/components/ConfirmProvider'
+import { IconAlertCircle, IconKey, IconLock, IconLockOpen, IconShieldCheck, IconTrash, IconUserCheck, IconUserOff, IconUserPlus, IconUsers } from '@tabler/icons-react'
+import PageHeader from '@/components/ui/PageHeader'
+import StatCard from '@/components/ui/StatCard'
+import Modal from '@/components/ui/Modal'
+import Field from '@/components/ui/Field'
+import Badge from '@/components/ui/Badge'
 import PasswordInput from '@/components/PasswordInput'
-import styles from '@/dashboard/store.module.css'
+import { useConfirm } from '@/components/ConfirmProvider'
+import { api } from '@/lib/api'
+import { MIN_PASSWORD_LENGTH, ROLE_LABEL } from '@/lib/constants'
+import { fmtDate, fmtNum, initials } from '@/lib/format'
+import ui from '@/styles/ui.module.css'
 
-export default function UsersManager({ initialUsers, currentUserId, currentUserRole }) {
-  const router = useRouter()
-  const { confirm } = useConfirm()
-  const [users, setUsers] = useState(initialUsers)
+const ROLE_TONE = { STANDARD: 'neutral', ADMIN: 'info', SUPER_ADMIN: 'brand' }
+const ROLE_HELP = {
+  STANDARD: 'Works in the stores: stock in, transfers, stock out, reports.',
+  ADMIN: 'Also manages stores, categories, lists, users and settings.',
+  SUPER_ADMIN: 'Full control, including removing items and activity tracking.',
+}
+
+function ErrorAlert({ message }) {
+  if (!message) return null
+  return (
+    <div className={`${ui.alert} ${ui.alertDanger}`}>
+      <IconAlertCircle size={17} />
+      <span>{message}</span>
+    </div>
+  )
+}
+
+function AddUserModal({ allowedRoles, onClose, onDone }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('STANDARD')
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [resetUserId, setResetUserId] = useState(null)
-  const [resetPassword, setResetPassword] = useState('')
-  const [notice, setNotice] = useState('')
-
-  const allowedRoles = currentUserRole === 'SUPER_ADMIN'
-    ? ['STANDARD', 'ADMIN', 'SUPER_ADMIN']
-    : ['STANDARD', 'ADMIN']
-
-  useEffect(() => {
-    if (!allowedRoles.includes(role)) {
-      setRole(allowedRoles[0])
-    }
-  }, [allowedRoles, role])
-
-  async function refresh() {
-    const res = await fetch('/api/users')
-    const data = await res.json()
-    if (Array.isArray(data)) setUsers(data)
-    router.refresh()
-  }
 
   async function submit(e) {
     e.preventDefault()
-    if (!username.trim() || !password) { setError('Username and password required.'); return }
-    setLoading(true); setError('')
+    if (!username.trim()) { setError('Enter a username.'); return }
+    if (password.length < MIN_PASSWORD_LENGTH) { setError(`The password must be at least ${MIN_PASSWORD_LENGTH} characters.`); return }
+    setSaving(true); setError('')
     try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password, role }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setUsername(''); setPassword(''); setRole('STANDARD')
-      await refresh()
+      const user = await api('/api/users', { method: 'POST', body: { username: username.trim(), password, role } })
+      onDone(`${user.username} can now sign in`)
     } catch (err) {
       setError(err.message)
-    } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
-  async function toggleActive(userId, next) {
-    setLoading(true); setError('')
-    try {
-      const res = await fetch(`/api/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: next }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      await refresh()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
+  return (
+    <Modal
+      title="Add user"
+      subtitle="They sign in with this username and password"
+      onClose={onClose}
+      dismissible={!saving}
+      footer={(
+        <>
+          <button type="button" className={`${ui.btn} ${ui.btnSecondary}`} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" form="add-user" className={`${ui.btn} ${ui.btnPrimary}`} disabled={saving}>
+            {saving ? <><span className={ui.spinner} /> Adding…</> : 'Add user'}
+          </button>
+        </>
+      )}
+    >
+      <form id="add-user" className={ui.form} onSubmit={submit}>
+        <Field label="Username" required>
+          <input autoFocus className={ui.input} value={username} onChange={e => setUsername(e.target.value)} autoComplete="off" />
+        </Field>
+        <Field label="Password" required hint={`At least ${MIN_PASSWORD_LENGTH} characters. Share it privately; they can change it under My account.`}>
+          <PasswordInput value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
+        </Field>
+        <Field label="Role" required hint={ROLE_HELP[role]}>
+          <select className={ui.input} value={role} onChange={e => setRole(e.target.value)}>
+            {allowedRoles.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+          </select>
+        </Field>
+        <ErrorAlert message={error} />
+      </form>
+    </Modal>
+  )
+}
 
-  async function submitReset(e, user) {
+function ResetPasswordModal({ user, onClose, onDone }) {
+  const [password, setPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(e) {
     e.preventDefault()
-    if (!resetPassword) return
-    setLoading(true); setError(''); setNotice('')
+    if (password.length < MIN_PASSWORD_LENGTH) { setError(`The password must be at least ${MIN_PASSWORD_LENGTH} characters.`); return }
+    setSaving(true); setError('')
     try {
-      const res = await fetch(`/api/users/${user.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: resetPassword }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setResetUserId(null); setResetPassword('')
-      setNotice(`Password for ${user.username} has been reset.`)
+      await api(`/api/users/${user.id}`, { method: 'PATCH', body: { password } })
+      onDone(`Password for ${user.username} has been reset`)
     } catch (err) {
       setError(err.message)
-    } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
-  async function deleteUser(userId) {
-    const ok = await confirm('Permanently delete this user? This cannot be undone.')
-    if (!ok) return
-    setLoading(true); setError('')
+  return (
+    <Modal
+      title="Reset password"
+      subtitle={`For ${user.username}. They'll be signed out everywhere and must use the new password.`}
+      onClose={onClose}
+      dismissible={!saving}
+      footer={(
+        <>
+          <button type="button" className={`${ui.btn} ${ui.btnSecondary}`} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" form="reset-password" className={`${ui.btn} ${ui.btnPrimary}`} disabled={saving}>
+            {saving ? <><span className={ui.spinner} /> Saving…</> : 'Set password'}
+          </button>
+        </>
+      )}
+    >
+      <form id="reset-password" className={ui.form} onSubmit={submit}>
+        <Field label="New password" required hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}>
+          <PasswordInput value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" autoFocus />
+        </Field>
+        <ErrorAlert message={error} />
+      </form>
+    </Modal>
+  )
+}
+
+export default function UsersManager({ users, currentUserId, currentUserRole }) {
+  const router = useRouter()
+  const { confirm, toast } = useConfirm()
+  const [modal, setModal] = useState(null) // 'add' | { reset: user }
+  const [busyId, setBusyId] = useState(null)
+
+  const isSuperAdmin = currentUserRole === 'SUPER_ADMIN'
+  const allowedRoles = isSuperAdmin ? ['STANDARD', 'ADMIN', 'SUPER_ADMIN'] : ['STANDARD', 'ADMIN']
+  const active = users.filter(u => u.isActive).length
+  const admins = users.filter(u => u.role !== 'STANDARD').length
+
+  function finish(message) {
+    setModal(null)
+    toast(message)
+    router.refresh()
+  }
+
+  async function update(user, body, message) {
+    setBusyId(user.id)
     try {
-      const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      await refresh()
-    } catch (err) {
-      setError(err.message)
+      await api(`/api/users/${user.id}`, { method: 'PATCH', body })
+      toast(message)
+      router.refresh()
+    } catch (e) {
+      toast(e.message, { type: 'error' })
     } finally {
-      setLoading(false)
+      setBusyId(null)
+    }
+  }
+
+  async function toggleActive(user) {
+    if (user.isActive) {
+      const ok = await confirm({
+        title: 'Deactivate user',
+        message: `Deactivate ${user.username}? They'll be signed out and can't sign in until reactivated. Everything they recorded stays in the history.`,
+        confirmLabel: 'Deactivate',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    update(user, { isActive: !user.isActive }, user.isActive ? `${user.username} deactivated` : `${user.username} reactivated`)
+  }
+
+  async function deleteUser(user) {
+    const ok = await confirm({
+      title: 'Delete user',
+      message: `Delete ${user.username} for good? This is only possible because they have never recorded any stock activity.`,
+      confirmLabel: 'Delete user',
+      danger: true,
+    })
+    if (!ok) return
+    setBusyId(user.id)
+    try {
+      await api(`/api/users/${user.id}`, { method: 'DELETE' })
+      toast(`${user.username} deleted`)
+      router.refresh()
+    } catch (e) {
+      toast(e.message, { type: 'error' })
+    } finally {
+      setBusyId(null)
     }
   }
 
   return (
     <>
-      <div className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <h2 className={styles.storeName}>Users</h2>
-          <span className={styles.storeMeta}>Manage who can sign in and make changes</span>
-        </div>
-      </div>
-
-      <div className={styles.content}>
-        <form onSubmit={submit} className={styles.field} style={{ maxWidth: 480, marginBottom: 24 }}>
-          <label>Username</label>
-          <input value={username} onChange={e => setUsername(e.target.value)} />
-
-          <label style={{ marginTop: 12 }}>Password</label>
-          <PasswordInput value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
-
-          <label style={{ marginTop: 12 }}>Role</label>
-          <select value={role} onChange={e => setRole(e.target.value)}>
-            {allowedRoles.map(option => (
-              <option key={option} value={option}>
-                {option === 'STANDARD' ? 'Standard' : option === 'ADMIN' ? 'Admin' : 'Super Admin'}
-              </option>
-            ))}
-          </select>
-
-          {error && <p className={styles.errorMsg}>{error}</p>}
-          {notice && <p className={styles.fieldHint} style={{ color: 'var(--success)' }}>{notice}</p>}
-
-          <button type="submit" className={styles.btnPrimary} disabled={loading} style={{ marginTop: 12 }}>
-            {loading ? 'Adding…' : 'Add user'}
+      <PageHeader
+        title="Users"
+        subtitle="Who can sign in, and what they're allowed to do"
+        actions={(
+          <button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('add')}>
+            <IconUserPlus size={17} /> Add user
           </button>
-        </form>
+        )}
+      />
 
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Username</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(u => (
-                <Fragment key={u.id}>
-                <tr>
-                  <td className={styles.itemName}>
-                    {u.username} {u.id === currentUserId && <span className={styles.fieldHint}>(you)</span>}
-                  </td>
-                  <td className={styles.mono}>{u.role}</td>
-                  <td>
-                    {u.isActive ? (
-                      <span className={styles.badgeOk}>Active</span>
-                    ) : (
-                      <span className={styles.badgeLow}>Deactivated</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className={styles.rowActions}>
-                      <button
-                        className={styles.btnGhost}
-                        onClick={() => toggleActive(u.id, !u.isActive)}
-                        disabled={loading || u.id === currentUserId}
-                      >
-                        {u.isActive ? 'Deactivate' : 'Reactivate'}
-                      </button>
-                      {u.id !== currentUserId && (u.role !== 'SUPER_ADMIN' || currentUserRole === 'SUPER_ADMIN') && (
-                        <button
-                          className={styles.btnGhost}
-                          onClick={() => {
-                            setResetUserId(resetUserId === u.id ? null : u.id)
-                            setResetPassword(''); setError(''); setNotice('')
-                          }}
-                          disabled={loading}
-                        >
-                          Reset password
-                        </button>
-                      )}
-                      {currentUserRole === 'SUPER_ADMIN' && u.id !== currentUserId && (
-                        <button
-                          className={`${styles.btnGhost} ${styles.iconBtnDanger}`}
-                          onClick={() => deleteUser(u.id)}
-                          disabled={loading}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-                {resetUserId === u.id && (
-                  <tr>
-                    <td colSpan={4}>
-                      <form onSubmit={e => submitReset(e, u)} className={styles.field} style={{ maxWidth: 480 }}>
-                        <label>New password for {u.username}</label>
-                        <PasswordInput
-                          value={resetPassword}
-                          onChange={e => setResetPassword(e.target.value)}
-                          autoComplete="new-password"
-                          autoFocus
-                        />
-                        <div className={styles.rowActions} style={{ marginTop: 8 }}>
-                          <button type="submit" className={styles.btnPrimary} disabled={loading || !resetPassword}>
-                            {loading ? 'Saving…' : 'Set password'}
-                          </button>
-                          <button type="button" className={styles.btnGhost} onClick={() => setResetUserId(null)}>
-                            Cancel
-                          </button>
-                        </div>
-                      </form>
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+      <div className={ui.page}>
+        <div className={`${ui.grid} ${ui.cols3}`}>
+          <StatCard icon={IconUsers} tone="info" label="Users" value={fmtNum(users.length)} />
+          <StatCard icon={IconUserCheck} tone="success" label="Active" value={fmtNum(active)} hint={`${fmtNum(users.length - active)} deactivated`} />
+          <StatCard icon={IconShieldCheck} tone="brand" label="Admins" value={fmtNum(admins)} hint="Admins and Super admins" />
         </div>
+
+        <section className={`${ui.card} ${ui.cardFlush}`}>
+          <div className={ui.tableWrap}>
+            <table className={ui.table}>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th className={ui.num}>Records</th>
+                  <th>Added</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => {
+                  const isSelf = u.id === currentUserId
+                  const canChange = !isSelf && (u.role !== 'SUPER_ADMIN' || isSuperAdmin)
+                  return (
+                    <tr key={u.id}>
+                      <td>
+                        <div className={ui.identity}>
+                          <span className={ui.avatar}>{initials(u.username)}</span>
+                          <span className={ui.cellStrong}>{u.username}{isSelf && <span className={ui.cellSub}>You</span>}</span>
+                        </div>
+                      </td>
+                      <td><Badge tone={ROLE_TONE[u.role]}>{ROLE_LABEL[u.role] ?? u.role}</Badge></td>
+                      <td>
+                        {!u.isActive
+                          ? <Badge tone="neutral" dot>Deactivated</Badge>
+                          : u.locked
+                            ? <Badge tone="danger" dot title="Too many failed sign-ins">Locked</Badge>
+                            : <Badge tone="success" dot>Active</Badge>}
+                      </td>
+                      <td className={ui.num}>{fmtNum(u.activity)}</td>
+                      <td className={ui.cellMuted}>{fmtDate(u.createdAt)}</td>
+                      <td>
+                        <div className={ui.cellActions}>
+                          {canChange && u.locked && (
+                            <button type="button" className={`${ui.btn} ${ui.btnSecondary} ${ui.btnSm}`} onClick={() => update(u, { unlock: true }, `${u.username} unlocked`)} disabled={busyId === u.id}>
+                              <IconLockOpen size={15} /> Unlock
+                            </button>
+                          )}
+                          {canChange && (
+                            <button type="button" className={ui.iconBtn} title="Reset password" onClick={() => setModal({ reset: u })} disabled={busyId === u.id}>
+                              <IconKey size={17} />
+                            </button>
+                          )}
+                          {canChange && (
+                            <button type="button" className={ui.iconBtn} title={u.isActive ? 'Deactivate' : 'Reactivate'} onClick={() => toggleActive(u)} disabled={busyId === u.id}>
+                              {u.isActive ? <IconUserOff size={17} /> : <IconUserCheck size={17} />}
+                            </button>
+                          )}
+                          {isSuperAdmin && !isSelf && (
+                            <button
+                              type="button"
+                              className={`${ui.iconBtn} ${ui.iconBtnDanger}`}
+                              title={u.activity ? 'Has recorded stock activity, so it can only be deactivated' : 'Delete user'}
+                              onClick={() => deleteUser(u)}
+                              disabled={u.activity > 0 || busyId === u.id}
+                            >
+                              <IconTrash size={17} />
+                            </button>
+                          )}
+                          {!canChange && !isSelf && <span className={ui.cellMuted} title="Only a Super admin can change this account"><IconLock size={16} /></span>}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className={ui.cardFooter}>
+            <span className={ui.hint}>
+              Users who have recorded stock activity can be deactivated but not deleted, so every record keeps its author.
+            </span>
+          </div>
+        </section>
       </div>
+
+      {modal === 'add' && <AddUserModal allowedRoles={allowedRoles} onClose={() => setModal(null)} onDone={finish} />}
+      {modal?.reset && <ResetPasswordModal user={modal.reset} onClose={() => setModal(null)} onDone={finish} />}
     </>
   )
 }

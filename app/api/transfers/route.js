@@ -1,16 +1,14 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
 import { requireUser } from "@/lib/auth"
+import { json, fail, handleError, parseEntryDate } from "@/lib/http"
 import { applyStockMove } from "@/lib/stockMove"
 
 export async function GET(req) {
   try {
-    const { searchParams } = new URL(req.url)
-    const storeId = searchParams.get("storeId")
+    await requireUser()
+    const storeId = new URL(req.url).searchParams.get("storeId")
     const transfers = await prisma.transfer.findMany({
-      where: storeId
-        ? { OR: [{ sourceStoreId: storeId }, { targetStoreId: storeId }] }
-        : undefined,
+      where: storeId ? { OR: [{ sourceStoreId: storeId }, { targetStoreId: storeId }] } : undefined,
       include: {
         product: { include: { unit: true } },
         sourceStore: { select: { id: true, name: true, category: { select: { name: true } } } },
@@ -22,9 +20,9 @@ export async function GET(req) {
       orderBy: { createdAt: "desc" },
       take: 100,
     })
-    return NextResponse.json(transfers)
+    return json(transfers)
   } catch (e) {
-    return NextResponse.json({ error: "Failed to fetch transfers" }, { status: 500 })
+    return handleError(e, "Failed to load stock movements")
   }
 }
 
@@ -33,45 +31,28 @@ export async function GET(req) {
 // targetStoreId = transfer between stores; projectId / recipientId = stock out (leaves the inventory as used/issued).
 // A stock out to a project must say who is taking it to the field (takenBy).
 export async function POST(req) {
-  let user
   try {
-    user = await requireUser()
-  } catch (e) {
-    return NextResponse.json({ error: "You must be signed in to do this" }, { status: 401 })
-  }
-
-  try {
+    const user = await requireUser()
     const { sourceStoreId, targetStoreId, projectId, recipientId, takenBy, refNo, entryDate, items } = await req.json()
 
-    if (!sourceStoreId)
-      return NextResponse.json({ error: "Source store required" }, { status: 400 })
-    const destinations = [targetStoreId, projectId, recipientId].filter(Boolean)
-    if (destinations.length !== 1)
-      return NextResponse.json({ error: "Choose one destination: a store, a project or an external party" }, { status: 400 })
-    if (targetStoreId && targetStoreId === sourceStoreId)
-      return NextResponse.json({ error: "Source and target cannot be the same" }, { status: 400 })
-    // Stock going out to a project (the field) must record who is taking it
+    if (!sourceStoreId) return fail("Source store required")
+    if ([targetStoreId, projectId, recipientId].filter(Boolean).length !== 1)
+      return fail("Choose one destination: a store, a project or an external party")
+    if (targetStoreId && targetStoreId === sourceStoreId) return fail("Source and destination cannot be the same store")
     const taker = projectId ? takenBy?.trim() || null : null
-    if (projectId && !taker)
-      return NextResponse.json({ error: "Enter who is taking the stock to the project (Taken by)" }, { status: 400 })
-    if (!Array.isArray(items) || items.length === 0)
-      return NextResponse.json({ error: "Add at least one item" }, { status: 400 })
+    if (projectId && !taker) return fail("Enter who is taking the stock to the project (Taken by)")
+    if (!Array.isArray(items) || items.length === 0) return fail("Add at least one item")
     for (const [i, item] of items.entries()) {
       if (!item.entryId || !Number.isFinite(item.quantity) || item.quantity <= 0)
-        return NextResponse.json({ error: `Line ${i + 1}: select an item and enter a quantity greater than 0` }, { status: 400 })
+        return fail(`Line ${i + 1}: select an item and enter a quantity greater than 0`)
     }
-
-    let parsedDate = entryDate ? new Date(entryDate) : new Date()
-    if (isNaN(parsedDate)) parsedDate = new Date()
-    if (parsedDate > new Date())
-      return NextResponse.json({ error: "Date cannot be in the future" }, { status: 400 })
+    const date = parseEntryDate(entryDate)
 
     const sourceStore = await prisma.store.findUnique({
       where: { id: sourceStoreId },
       include: { category: { select: { trackLogs: true } } },
     })
-    if (!sourceStore)
-      return NextResponse.json({ error: "Source store not found" }, { status: 404 })
+    if (!sourceStore) return fail("Source store not found", 404)
     const sourceUserId = sourceStore.category.trackLogs ? user.id : null
 
     let outNote, inNote, targetUserId = null
@@ -80,20 +61,17 @@ export async function POST(req) {
         where: { id: targetStoreId },
         include: { category: { select: { trackLogs: true, isSystem: true } } },
       })
-      if (!targetStore || targetStore.category.isSystem)
-        return NextResponse.json({ error: "Target store not found" }, { status: 404 })
+      if (!targetStore || targetStore.category.isSystem) return fail("Destination store not found", 404)
       targetUserId = targetStore.category.trackLogs ? user.id : null
       outNote = `Transferred to ${targetStore.name}`
       inNote = `Received from ${sourceStore.name}`
     } else if (projectId) {
       const project = await prisma.project.findUnique({ where: { id: projectId } })
-      if (!project)
-        return NextResponse.json({ error: "Project not found" }, { status: 404 })
+      if (!project) return fail("Project not found", 404)
       outNote = `Used on project ${project.name}`
     } else {
       const recipient = await prisma.recipient.findUnique({ where: { id: recipientId } })
-      if (!recipient)
-        return NextResponse.json({ error: "Recipient not found" }, { status: 404 })
+      if (!recipient) return fail("Recipient not found", 404)
       outNote = `Issued to ${recipient.name}${recipient.company ? ` (${recipient.company})` : ""}`
     }
     if (taker) outNote += ` · taken by ${taker}`
@@ -108,20 +86,17 @@ export async function POST(req) {
         takenBy: taker,
         items,
         refNo: ref,
-        entryDate: parsedDate,
+        entryDate: date,
         outNote,
         inNote,
         sourceUserId,
         targetUserId,
-        transferUserId: (sourceUserId || targetUserId) ? user.id : null,
+        transferUserId: sourceUserId || targetUserId ? user.id : null,
       }),
       { timeout: 20000 },
     )
-
-    return NextResponse.json({ count, refNo: ref }, { status: 201 })
+    return json({ count, refNo: ref }, 201)
   } catch (e) {
-    if (e.status) return NextResponse.json({ error: e.message }, { status: e.status })
-    console.error(e)
-    return NextResponse.json({ error: "Stock movement failed. No changes were made." }, { status: 500 })
+    return handleError(e, "Stock movement failed. No changes were made.")
   }
 }

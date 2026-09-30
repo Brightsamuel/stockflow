@@ -1,65 +1,35 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
 import { requireAdmin, hashPassword } from "@/lib/auth"
+import { json, fail, handleError } from "@/lib/http"
+import { listUsers, getUserRow } from "@/lib/users"
+import { MIN_PASSWORD_LENGTH, ROLES } from "@/lib/constants"
 
 export async function GET() {
   try {
     await requireAdmin()
+    return json(await listUsers())
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 401 })
+    return handleError(e, "Failed to load users")
   }
-
-  const users = await prisma.user.findMany({
-    select: { id: true, username: true, role: true, isActive: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  })
-  return NextResponse.json(users)
 }
 
 export async function POST(req) {
-  let actor
   try {
-    actor = await requireAdmin()
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 401 })
-  }
-
-  try {
+    const actor = await requireAdmin()
     const { username, password, role } = await req.json()
-    if (!username?.trim() || !password)
-      return NextResponse.json({ error: "Username and password required" }, { status: 400 })
-    if (password.length < 4)
-      return NextResponse.json({ error: "Password must be at least 4 characters" }, { status: 400 })
+    if (!username?.trim() || !password) return fail("Enter a username and a password")
+    if (password.length < MIN_PASSWORD_LENGTH)
+      return fail(`The password must be at least ${MIN_PASSWORD_LENGTH} characters`)
 
-    const validRoles = ["STANDARD", "ADMIN", "SUPER_ADMIN"]
-    const requestedRole = validRoles.includes(role) ? role : "STANDARD"
-
-    if (requestedRole === "SUPER_ADMIN" && actor.role !== "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only Super Admins can assign the SUPER_ADMIN role" },
-        { status: 403 }
-      )
-    }
-
-    if (actor.role === "ADMIN" && requestedRole === "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only Super Admins can assign the SUPER_ADMIN role" },
-        { status: 403 }
-      )
-    }
+    const requestedRole = ROLES.includes(role) ? role : "STANDARD"
+    if (requestedRole === "SUPER_ADMIN" && actor.role !== "SUPER_ADMIN")
+      return fail("Only a Super admin can create another Super admin", 403)
 
     const user = await prisma.user.create({
-      data: {
-        username: username.trim(),
-        passwordHash: hashPassword(password),
-        role: requestedRole,
-      },
-      select: { id: true, username: true, role: true, isActive: true, createdAt: true },
+      data: { username: username.trim(), passwordHash: hashPassword(password), role: requestedRole },
     })
-    return NextResponse.json(user, { status: 201 })
+    return json(await getUserRow(user.id), 201)
   } catch (e) {
-    if (e.code === "P2002")
-      return NextResponse.json({ error: "Username already exists" }, { status: 409 })
-    return NextResponse.json({ error: "Failed to create user" }, { status: 500 })
+    return handleError(e, "Failed to create user", { P2002: "That username is already taken" })
   }
 }

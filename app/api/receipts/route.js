@@ -1,18 +1,12 @@
-// app/api/receipts/route.js
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
 import { requireUser } from "@/lib/auth"
+import { json, handleError } from "@/lib/http"
 
 // GET /api/receipts?q=RCT
 // Distinct ref nos (newest first) matching q, with how many lines each has and what kind it is
 export async function GET(req) {
   try {
     await requireUser()
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.status || 401 })
-  }
-
-  try {
     const q = new URL(req.url).searchParams.get("q")?.trim()
 
     const groups = await prisma.stockLog.groupBy({
@@ -24,9 +18,8 @@ export async function GET(req) {
       take: 20,
     })
 
-    const refNos = groups.map(g => g.refNo)
     const logs = await prisma.stockLog.findMany({
-      where: { refNo: { in: refNos } },
+      where: { refNo: { in: groups.map(g => g.refNo) } },
       select: {
         refNo: true,
         type: true,
@@ -54,7 +47,9 @@ export async function GET(req) {
           ? "Issue"
           : "Transfer"
       // A transfer writes an OUT and an IN line per item; count items once
-      const items = kind === "Transfer" ? lines.filter(l => l.type === "TRANSFER_OUT").length : lines.filter(l => l.type !== "TRANSFER_IN").length
+      const items = kind === "Transfer"
+        ? lines.filter(l => l.type === "TRANSFER_OUT").length
+        : lines.filter(l => l.type !== "TRANSFER_IN").length
       return {
         id: g.refNo,
         refNo: g.refNo,
@@ -64,10 +59,8 @@ export async function GET(req) {
         preview: first ? `${first.product.name} · ${first.store.name}` : "",
       }
     })
-
-    return NextResponse.json(receipts)
+    return json(receipts)
   } catch (e) {
-    console.error(e)
-    return NextResponse.json({ error: "Failed to fetch receipts" }, { status: 500 })
+    return handleError(e, "Failed to look up ref nos")
   }
 }

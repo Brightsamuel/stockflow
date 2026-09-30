@@ -1,28 +1,36 @@
 import prisma from "@/lib/prisma"
-import { NextResponse } from "next/server"
+import { requireUser, requireAdmin } from "@/lib/auth"
+import { json, fail, handleError } from "@/lib/http"
 
 export async function GET() {
-  const stores = await prisma.store.findMany({
-    where: { category: { isSystem: false } },
-    include: { category: { select: { id: true, name: true } } },
-    orderBy: { createdAt: "asc" },
-  })
-  return NextResponse.json(stores)
+  try {
+    await requireUser()
+    const stores = await prisma.store.findMany({
+      where: { category: { isSystem: false } },
+      include: { category: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "asc" },
+    })
+    return json(stores)
+  } catch (e) {
+    return handleError(e, "Failed to load stores")
+  }
 }
 
 export async function POST(req) {
   try {
+    await requireAdmin()
     const { name, categoryId } = await req.json()
-    if (!name?.trim() || !categoryId)
-      return NextResponse.json({ error: "Name and categoryId required" }, { status: 400 })
+    if (!name?.trim() || !categoryId) return fail("Enter a store name and choose its category")
+
+    const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { isSystem: true } })
+    if (!category || category.isSystem) return fail("Category not found", 404)
+
     const store = await prisma.store.create({
       data: { name: name.trim(), categoryId },
       include: { category: { select: { id: true, name: true } } },
     })
-    return NextResponse.json(store, { status: 201 })
+    return json(store, 201)
   } catch (e) {
-    if (e.code === "P2002")
-      return NextResponse.json({ error: "Store name already exists in this category" }, { status: 409 })
-    return NextResponse.json({ error: "Failed to create store" }, { status: 500 })
+    return handleError(e, "Failed to create store", { P2002: "A store with that name already exists in this category" })
   }
 }

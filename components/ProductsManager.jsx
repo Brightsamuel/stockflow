@@ -1,15 +1,23 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import {
+  IconAlertCircle, IconArrowBarUp, IconBox, IconCoins, IconEdit, IconHistory, IconPackage, IconPlus, IconRuler2,
+  IconSearch, IconTrash, IconBuildingBank,
+} from '@tabler/icons-react'
+import PageHeader from '@/components/ui/PageHeader'
+import StatCard from '@/components/ui/StatCard'
+import Modal from '@/components/ui/Modal'
+import Field from '@/components/ui/Field'
+import EmptyState from '@/components/ui/EmptyState'
 import { useConfirm } from '@/components/ConfirmProvider'
-import { StockMoveModal, ISSUE_DESTINATIONS } from '@/dashboard/StoreDashboard'
-import styles from '@/dashboard/store.module.css'
+import StockMoveModal, { ISSUE_DESTINATIONS } from '@/dashboard/StockMoveModal'
+import { api } from '@/lib/api'
+import { fmtMoney, fmtNum, plural } from '@/lib/format'
+import ui from '@/styles/ui.module.css'
 
-const NEW_UNIT_VALUE = '__new_unit__'
-
-function fmt(n) {
-  return Number(n).toLocaleString()
-}
+const NEW_UNIT = '__new_unit__'
 
 // Opening entry = the product's stock in the hidden opening-balance store
 function balancesOf(product) {
@@ -24,22 +32,101 @@ function balancesOf(product) {
 }
 
 // Opening qty + rate inputs with the amount worked out as you type
-function OpeningFields({ qty, rate, onQty, onRate }) {
+function OpeningFields({ qty, rate, onQty, onRate, hint }) {
   const amount = (parseFloat(qty) || 0) * (parseFloat(rate) || 0)
   return (
-    <>
-      <div className={styles.fieldRow}>
-        <div className={styles.field}>
-          <label>Opening qty</label>
-          <input type="number" min="0" value={qty} onChange={e => onQty(e.target.value)} placeholder="0" />
-        </div>
-        <div className={styles.field}>
-          <label>Rate (UGX)</label>
-          <input type="number" min="0" value={rate} onChange={e => onRate(e.target.value)} placeholder="0" />
-        </div>
+    <div className={ui.stack}>
+      <span className={ui.sectionLabel}>Opening balance</span>
+      <div className={ui.formRow2}>
+        <Field label="Opening qty">
+          <input type="number" min="0" inputMode="decimal" className={ui.input} value={qty} onChange={e => onQty(e.target.value)} placeholder="0" />
+        </Field>
+        <Field label="Rate (UGX)">
+          <input type="number" min="0" inputMode="decimal" className={ui.input} value={rate} onChange={e => onRate(e.target.value)} placeholder="0" />
+        </Field>
       </div>
-      <span className={styles.fieldHint}>Amount: UGX {fmt(amount)}</span>
-    </>
+      <span className={ui.hint}>
+        Amount: <strong className={ui.strong}>{fmtMoney(amount)}</strong>. {hint ?? 'Treated as stock held from the start; issue it to a store, a project or an external party.'}
+      </span>
+    </div>
+  )
+}
+
+function ErrorAlert({ message }) {
+  if (!message) return null
+  return (
+    <div className={`${ui.alert} ${ui.alertDanger}`}>
+      <IconAlertCircle size={17} />
+      <span>{message}</span>
+    </div>
+  )
+}
+
+function NewProductModal({ units, isAdmin, onClose, onDone }) {
+  const [name, setName] = useState('')
+  const [unitId, setUnitId] = useState('')
+  const [newUnit, setNewUnit] = useState('')
+  const [openingQty, setOpeningQty] = useState('')
+  const [openingRate, setOpeningRate] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(e) {
+    e.preventDefault()
+    if (!name.trim()) { setError('Enter the product name.'); return }
+    if (unitId === NEW_UNIT && !newUnit.trim()) { setError('Enter a name for the new unit.'); return }
+    if (!unitId) { setError('Choose a unit, or "+ New unit".'); return }
+
+    setSaving(true); setError('')
+    try {
+      let finalUnitId = unitId
+      if (unitId === NEW_UNIT) finalUnitId = (await api('/api/units', { method: 'POST', body: { name: newUnit.trim() } })).id
+      const body = { name: name.trim(), unitId: finalUnitId }
+      if (isAdmin) {
+        body.openingQty = parseFloat(openingQty) || 0
+        body.openingRate = parseFloat(openingRate) || 0
+      }
+      const product = await api('/api/products', { method: 'POST', body })
+      onDone(product)
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="New product"
+      subtitle="Added to the catalogue that every store uses"
+      onClose={onClose}
+      dismissible={!saving}
+      footer={(
+        <>
+          <button type="button" className={`${ui.btn} ${ui.btnSecondary}`} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" form="new-product" className={`${ui.btn} ${ui.btnPrimary}`} disabled={saving}>
+            {saving ? <><span className={ui.spinner} /> Adding…</> : 'Add product'}
+          </button>
+        </>
+      )}
+    >
+      <form id="new-product" className={ui.form} onSubmit={submit}>
+        <Field label="Product name" required>
+          <input autoFocus className={ui.input} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Cement 50kg" />
+        </Field>
+        <Field label="Unit" required asLabel={false}>
+          <select className={ui.input} value={unitId} onChange={e => setUnitId(e.target.value)}>
+            <option value="">Choose a unit…</option>
+            {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            <option value={NEW_UNIT}>+ New unit…</option>
+          </select>
+          {unitId === NEW_UNIT && (
+            <input autoFocus className={ui.input} value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="e.g. bag, litre, piece" />
+          )}
+        </Field>
+        {isAdmin && <OpeningFields qty={openingQty} rate={openingRate} onQty={setOpeningQty} onRate={setOpeningRate} />}
+        <ErrorAlert message={error} />
+      </form>
+    </Modal>
   )
 }
 
@@ -48,320 +135,239 @@ function EditProductModal({ product, units, isAdmin, onClose, onDone }) {
   const [unitId, setUnitId] = useState(product.unitId)
   const [openingQty, setOpeningQty] = useState(String(product.openingQty))
   const [openingRate, setOpeningRate] = useState(String(product.openingRate))
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const { left } = balancesOf(product)
-  const issued = Math.max(product.openingQty - left, 0)
+  const issued = Math.max(product.openingQty - balancesOf(product).left, 0)
 
-  async function submit() {
-    if (!name.trim()) { setError('Product name is required.'); return }
-    setLoading(true); setError('')
+  async function submit(e) {
+    e.preventDefault()
+    if (!name.trim()) { setError('Enter the product name.'); return }
+    setSaving(true); setError('')
     try {
       const body = { name: name.trim(), unitId }
       if (isAdmin) {
         body.openingQty = parseFloat(openingQty) || 0
         body.openingRate = parseFloat(openingRate) || 0
       }
-      const res = await fetch(`/api/products/${product.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Unable to update product')
+      await api(`/api/products/${product.id}`, { method: 'PATCH', body })
       onDone()
     } catch (err) {
       setError(err.message)
-      setLoading(false)
+      setSaving(false)
     }
   }
 
   return (
-    <div className={styles.backdrop} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={styles.modal}>
-        <div className={styles.modalHeader}>
-          <h3>Edit product</h3>
-          <button className={styles.closeBtn} onClick={onClose}><i className="ti ti-x" /></button>
-        </div>
-        <div className={styles.modalBody}>
-          <div className={styles.field}>
-            <label>Product name</label>
-            <input value={name} onChange={e => setName(e.target.value)} />
-          </div>
-          <div className={styles.field}>
-            <label>Unit</label>
-            <select value={unitId} onChange={e => setUnitId(e.target.value)}>
-              {units.map(u => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
-          </div>
-          {isAdmin && (
-            <div className={styles.field}>
-              <OpeningFields qty={openingQty} rate={openingRate} onQty={setOpeningQty} onRate={setOpeningRate} />
-              {issued > 0 && (
-                <span className={styles.fieldHint}>
-                  {fmt(issued)} {product.unit.name} already issued from the opening balance, so opening qty can&apos;t go below that.
-                </span>
-              )}
-            </div>
-          )}
-          {error && <p className={styles.errorMsg}>{error}</p>}
-        </div>
-        <div className={styles.modalFooter}>
-          <button className={styles.btnGhost} onClick={onClose}>Cancel</button>
-          <button className={styles.btnPrimary} onClick={submit} disabled={loading}>
-            {loading ? 'Saving…' : 'Save changes'}
+    <Modal
+      title="Edit product"
+      subtitle={product.name}
+      onClose={onClose}
+      dismissible={!saving}
+      footer={(
+        <>
+          <button type="button" className={`${ui.btn} ${ui.btnSecondary}`} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" form="edit-product" className={`${ui.btn} ${ui.btnPrimary}`} disabled={saving}>
+            {saving ? <><span className={ui.spinner} /> Saving…</> : 'Save changes'}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+    >
+      <form id="edit-product" className={ui.form} onSubmit={submit}>
+        <Field label="Product name" required>
+          <input autoFocus className={ui.input} value={name} onChange={e => setName(e.target.value)} />
+        </Field>
+        <Field label="Unit" required>
+          <select className={ui.input} value={unitId} onChange={e => setUnitId(e.target.value)}>
+            {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </Field>
+        {isAdmin && (
+          <OpeningFields
+            qty={openingQty}
+            rate={openingRate}
+            onQty={setOpeningQty}
+            onRate={setOpeningRate}
+            hint={issued > 0 ? `${fmtNum(issued)} ${product.unit.name} has already been issued from it, so the opening qty can't go below that.` : undefined}
+          />
+        )}
+        <ErrorAlert message={error} />
+      </form>
+    </Modal>
   )
 }
 
-export default function ProductsManager({ initialProducts, initialUnits, allStores, isAdmin }) {
+export default function ProductsManager({ initialProducts, units, allStores, isAdmin }) {
   const router = useRouter()
-  const { confirm } = useConfirm()
+  const { confirm, toast } = useConfirm()
   const [products, setProducts] = useState(initialProducts)
-  const [units, setUnits] = useState(initialUnits)
+  const [query, setQuery] = useState('')
+  const [modal, setModal] = useState(null) // 'new' | { edit } | { issue }
 
-  const [name, setName] = useState('')
-  const [unitId, setUnitId] = useState('')
-  const [newUnitName, setNewUnitName] = useState('')
-  const [openingQty, setOpeningQty] = useState('')
-  const [openingRate, setOpeningRate] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [editing, setEditing] = useState(null)
-  const [issuing, setIssuing] = useState(null)
-
-  async function refreshAll() {
-    const [pRes, uRes] = await Promise.all([
-      fetch('/api/products'),
-      fetch('/api/units'),
-    ])
-    const [p, u] = await Promise.all([pRes.json(), uRes.json()])
-    if (Array.isArray(p)) setProducts(p)
-    if (Array.isArray(u)) setUnits(u)
+  async function reload() {
+    const data = await api('/api/products').catch(() => null)
+    if (Array.isArray(data)) setProducts(data)
     router.refresh()
   }
 
-  async function submitProduct(e) {
-    e.preventDefault()
-    if (!name.trim()) { setError('Product name is required.'); return }
-
-    const creatingNewUnit = unitId === NEW_UNIT_VALUE
-    if (creatingNewUnit && !newUnitName.trim()) {
-      setError('Enter a name for the new unit.'); return
-    }
-    if (!creatingNewUnit && !unitId) {
-      setError('Select a unit, or choose "+ New unit".'); return
-    }
-
-    setLoading(true); setError('')
-    try {
-      let finalUnitId = unitId
-
-      if (creatingNewUnit) {
-        const uRes = await fetch('/api/units', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: newUnitName.trim() }),
-        })
-        const uData = await uRes.json()
-        if (!uRes.ok) throw new Error(uData.error || 'Unable to create unit')
-        finalUnitId = uData.id
-      }
-
-      const body = { name: name.trim(), unitId: finalUnitId }
-      if (isAdmin) {
-        body.openingQty = parseFloat(openingQty) || 0
-        body.openingRate = parseFloat(openingRate) || 0
-      }
-
-      const res = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Unable to create product')
-
-      setName('')
-      setUnitId('')
-      setNewUnitName('')
-      setOpeningQty('')
-      setOpeningRate('')
-      await refreshAll()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function deleteProduct(id) {
-    const ok = await confirm('Delete this product? It must not be in any store inventory.')
+  async function deleteProduct(product) {
+    const ok = await confirm({
+      title: 'Delete product',
+      message: `Delete ${product.name}? Only a product that has never been stocked or issued can be deleted; anything with history is kept.`,
+      confirmLabel: 'Delete product',
+      danger: true,
+    })
     if (!ok) return
-    setLoading(true); setError('')
     try {
-      const res = await fetch(`/api/products/${id}`, { method: 'DELETE' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Unable to delete product')
-      await refreshAll()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
+      await api(`/api/products/${product.id}`, { method: 'DELETE' })
+      toast(`${product.name} deleted`)
+      reload()
+    } catch (e) {
+      toast(e.message, { type: 'error' })
     }
   }
+
+  const q = query.trim().toLowerCase()
+  const visible = products.filter(p => !q || p.name.toLowerCase().includes(q) || p.unit.name.toLowerCase().includes(q))
+  const openingValue = products.reduce((s, p) => s + p.openingQty * p.openingRate, 0)
+  const stockValue = products.reduce((s, p) => s + balancesOf(p).totalValue, 0)
 
   // StockMoveModal expects a store with items; the opening balance is presented as one
+  const issuing = modal?.issue
   const issuingStore = issuing && (() => {
     const { opening } = balancesOf(issuing)
     return {
       id: opening.storeId,
       name: 'Opening balance',
-      items: [{
-        id: opening.id,
-        productId: issuing.id,
-        name: issuing.name,
-        unit: issuing.unit.name,
-        owner: '—',
-        rate: opening.rate,
-        quantity: opening.quantity,
-      }],
+      items: [{ id: opening.id, productId: issuing.id, name: issuing.name, unit: issuing.unit.name, owner: '—', rate: opening.rate, quantity: opening.quantity }],
     }
   })()
 
   return (
     <>
-      <div className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <h2 className={styles.storeName}>Products</h2>
-          <span className={styles.storeMeta}>Master catalogue — shared across all stores</span>
+      <PageHeader
+        title="Products"
+        subtitle="The master catalogue shared by every store, with opening balances"
+        actions={(
+          <>
+            {isAdmin && (
+              <Link href="/lists?tab=units" className={`${ui.btn} ${ui.btnSecondary}`}>
+                <IconRuler2 size={17} /> Manage units
+              </Link>
+            )}
+            <button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('new')}>
+              <IconPlus size={17} /> New product
+            </button>
+          </>
+        )}
+      />
+
+      <div className={ui.page}>
+        <div className={`${ui.grid} ${ui.cols4}`}>
+          <StatCard icon={IconPackage} tone="info" label="Products" value={fmtNum(products.length)} hint="In the catalogue" />
+          <StatCard icon={IconBuildingBank} tone="brand" label="Opening balances" value={fmtMoney(openingValue)} hint="Qty × rate as entered" />
+          <StatCard icon={IconCoins} tone="success" label="Stock value" value={fmtMoney(stockValue)} hint="All stores and opening balances" />
+          <StatCard icon={IconRuler2} tone="teal" label="Units" value={fmtNum(units.length)} hint="kg, bag, litre…" />
         </div>
+
+        <section className={`${ui.card} ${ui.cardFlush}`}>
+          {products.length === 0 ? (
+            <EmptyState
+              icon={IconBox}
+              title="No products yet"
+              action={<button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('new')}><IconPlus size={17} /> New product</button>}
+            >
+              Products are created once here and then used by every store.
+            </EmptyState>
+          ) : (
+            <>
+              <div className={ui.toolbar}>
+                <div className={`${ui.inputWrap} ${ui.toolbarSearch}`}>
+                  <span className={ui.inputIcon}><IconSearch size={16} /></span>
+                  <input className={`${ui.input} ${ui.inputSm} ${ui.inputWithIcon}`} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search products…" aria-label="Search products" />
+                </div>
+                <span className={ui.spacer} />
+                <span className={ui.hint}>{visible.length === products.length ? plural(products.length, 'product') : `${visible.length} of ${products.length} products`}</span>
+              </div>
+              <div className={ui.tableWrap}>
+                <table className={ui.table}>
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Unit</th>
+                      <th className={ui.num}>Opening qty</th>
+                      <th className={ui.num}>Rate (UGX)</th>
+                      <th className={ui.num}>Opening value</th>
+                      <th className={ui.num}>Opening left</th>
+                      <th className={ui.num}>In stores</th>
+                      <th className={ui.num}>Total qty</th>
+                      <th className={ui.num}>Total value</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map(p => {
+                      const b = balancesOf(p)
+                      return (
+                        <tr key={p.id}>
+                          <td className={ui.cellStrong}>{p.name}</td>
+                          <td className={ui.cellMuted}>{p.unit.name}</td>
+                          <td className={ui.num}>{fmtNum(p.openingQty)}</td>
+                          <td className={ui.num}>{fmtNum(p.openingRate)}</td>
+                          <td className={ui.num}>{fmtNum(p.openingQty * p.openingRate)}</td>
+                          <td className={ui.num}>{fmtNum(b.left)}</td>
+                          <td className={ui.num}>{fmtNum(b.inStores)}</td>
+                          <td className={`${ui.num} ${ui.strong}`}>{fmtNum(b.totalQty)}</td>
+                          <td className={ui.num}>{fmtNum(b.totalValue)}</td>
+                          <td>
+                            <div className={ui.cellActions}>
+                              {b.left > 0 && (
+                                <button type="button" className={ui.iconBtn} title="Issue from the opening balance" onClick={() => setModal({ issue: p })}>
+                                  <IconArrowBarUp size={17} />
+                                </button>
+                              )}
+                              <Link href={`/search?product=${p.id}`} className={ui.iconBtn} title="History">
+                                <IconHistory size={17} />
+                              </Link>
+                              <button type="button" className={ui.iconBtn} title="Edit" onClick={() => setModal({ edit: p })}>
+                                <IconEdit size={17} />
+                              </button>
+                              <button type="button" className={`${ui.iconBtn} ${ui.iconBtnDanger}`} title="Delete" onClick={() => deleteProduct(p)}>
+                                <IconTrash size={17} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {visible.length === 0 && (
+                      <tr><td colSpan={10} className={ui.tableEmpty}>No products match &quot;{query.trim()}&quot;.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
       </div>
 
-      <div className={styles.content}>
-        <form className={styles.field} onSubmit={submitProduct} style={{ marginBottom: 24, maxWidth: 480 }}>
-          <label>Create Product Name</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Book" />
-
-          <label style={{ marginTop: 12 }}>Unit</label>
-          <select value={unitId} onChange={e => setUnitId(e.target.value)}>
-            <option value="">— select unit —</option>
-            {units.map(u => (
-              <option key={u.id} value={u.id}>{u.name}</option>
-            ))}
-            <option value={NEW_UNIT_VALUE}>+ New unit…</option>
-          </select>
-
-          {unitId === NEW_UNIT_VALUE && (
-            <input
-              autoFocus
-              style={{ marginTop: 8 }}
-              value={newUnitName}
-              onChange={e => setNewUnitName(e.target.value)}
-              placeholder="e.g. kg, litre, bag"
-            />
-          )}
-
-          {isAdmin && (
-            <div style={{ marginTop: 12 }}>
-              <OpeningFields qty={openingQty} rate={openingRate} onQty={setOpeningQty} onRate={setOpeningRate} />
-            </div>
-          )}
-
-          {error && <p className={styles.errorMsg}>{error}</p>}
-
-          <button type="submit" className={styles.btnPrimary} disabled={loading} style={{ marginTop: 12 }}>
-            {loading ? 'Adding…' : 'Add product'}
-          </button>
-        </form>
-
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Unit</th>
-                <th>Opening qty</th>
-                <th>Rate (UGX)</th>
-                <th>Amount</th>
-                <th>Opening left</th>
-                <th>In use</th>
-                <th>Total qty</th>
-                <th>Total value</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map(p => {
-                const b = balancesOf(p)
-                return (
-                  <tr key={p.id}>
-                    <td className={styles.itemName}>{p.name}</td>
-                    <td className={styles.mono}>{p.unit.name}</td>
-                    <td className={styles.mono}>{fmt(p.openingQty)}</td>
-                    <td className={styles.mono}>{fmt(p.openingRate)}</td>
-                    <td className={styles.mono}>{fmt(p.openingQty * p.openingRate)}</td>
-                    <td className={styles.mono}>{fmt(b.left)}</td>
-                    <td className={styles.mono}>{b.inStores} store{b.inStores === 1 ? '' : 's'}</td>
-                    <td className={styles.mono}>{fmt(b.totalQty)}</td>
-                    <td className={styles.mono}>{fmt(b.totalValue)}</td>
-                    <td>
-                      <div className={styles.rowActions}>
-                        {b.left > 0 && (
-                          <button
-                            className={styles.iconBtn}
-                            title="Issue from opening balance"
-                            onClick={() => setIssuing(p)}
-                            disabled={loading}
-                          >
-                            <i className="ti ti-arrow-bar-up" />
-                          </button>
-                        )}
-                        <button
-                          className={styles.iconBtn}
-                          title="Edit"
-                          onClick={() => setEditing(p)}
-                          disabled={loading}
-                        >
-                          <i className="ti ti-edit" />
-                        </button>
-                        <button
-                          className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-                          title="Delete"
-                          onClick={() => deleteProduct(p.id)}
-                          disabled={loading}
-                        >
-                          <i className="ti ti-trash" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-              {products.length === 0 && (
-                <tr><td colSpan={10} className={styles.fieldHint}>No products yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {editing && (
-        <EditProductModal
-          product={editing}
+      {modal === 'new' && (
+        <NewProductModal
           units={units}
           isAdmin={isAdmin}
-          onClose={() => setEditing(null)}
-          onDone={() => { setEditing(null); refreshAll() }}
+          onClose={() => setModal(null)}
+          onDone={product => { setModal(null); toast(`${product.name} added to the catalogue`); reload() }}
         />
       )}
-
+      {modal?.edit && (
+        <EditProductModal
+          product={modal.edit}
+          units={units}
+          isAdmin={isAdmin}
+          onClose={() => setModal(null)}
+          onDone={() => { setModal(null); toast('Product updated'); reload() }}
+        />
+      )}
       {issuingStore && (
         <StockMoveModal
           title="Issue from opening balance"
@@ -370,8 +376,8 @@ export default function ProductsManager({ initialProducts, initialUnits, allStor
           allStores={allStores}
           initialItemId={issuingStore.items[0].id}
           allowNext={false}
-          onClose={() => setIssuing(null)}
-          onDone={() => { setIssuing(null); refreshAll() }}
+          onClose={() => setModal(null)}
+          onDone={() => { setModal(null); reload() }}
         />
       )}
     </>

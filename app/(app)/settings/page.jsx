@@ -1,15 +1,15 @@
-// app/(app)/settings/page.jsx
-import prisma from '@/lib/prisma'
-import { getCurrentUser } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import { getCurrentUser } from '@/lib/auth'
+import { isAdminRole } from '@/lib/constants'
+import { getSettings } from '@/lib/settings'
 import SettingsForm from '@/components/SettingsForm'
+
+export const metadata = { title: 'Settings' }
 
 export default async function SettingsPage() {
   const currentUser = await getCurrentUser()
   if (!currentUser) redirect('/login')
-  if (currentUser.role !== 'ADMIN' && currentUser.role !== 'SUPER_ADMIN') redirect('/')
+  if (!isAdminRole(currentUser.role)) redirect('/')
 
-  const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } })
-
-  return <SettingsForm initialSettings={settings ?? {}} />
+  return <SettingsForm initialSettings={await getSettings()} />
 }
