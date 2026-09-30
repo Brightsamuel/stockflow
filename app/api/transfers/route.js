@@ -30,8 +30,8 @@ export async function GET(req) {
 
 // POST /api/transfers
 // Body: { sourceStoreId, targetStoreId | projectId | recipientId, takenBy?, refNo?, entryDate?, items: [{ entryId, quantity }] }
-// targetStoreId = transfer between stores; projectId / recipientId = stock out (leaves the inventory as used/issued),
-// which must say who took the stock (takenBy)
+// targetStoreId = transfer between stores; projectId / recipientId = stock out (leaves the inventory as used/issued).
+// A stock out to a project must say who is taking it to the field (takenBy).
 export async function POST(req) {
   let user
   try {
@@ -50,10 +50,10 @@ export async function POST(req) {
       return NextResponse.json({ error: "Choose one destination: a store, a project or an external party" }, { status: 400 })
     if (targetStoreId && targetStoreId === sourceStoreId)
       return NextResponse.json({ error: "Source and target cannot be the same" }, { status: 400 })
-    // Stock leaving the inventory must record who took it; transfers between stores don't
-    const taker = targetStoreId ? null : takenBy?.trim() || null
-    if (!targetStoreId && !taker)
-      return NextResponse.json({ error: "Enter who is taking the stock (Taken by)" }, { status: 400 })
+    // Stock going out to a project (the field) must record who is taking it
+    const taker = projectId ? takenBy?.trim() || null : null
+    if (projectId && !taker)
+      return NextResponse.json({ error: "Enter who is taking the stock to the project (Taken by)" }, { status: 400 })
     if (!Array.isArray(items) || items.length === 0)
       return NextResponse.json({ error: "Add at least one item" }, { status: 400 })
     for (const [i, item] of items.entries()) {

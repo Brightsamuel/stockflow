@@ -377,7 +377,7 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
         .then(data => setRecipients(Array.isArray(data) ? data : []))
         .catch(() => setRecipients([]))
     }
-    if (needsProjects || needsRecipients) {
+    if (needsProjects) {
       fetch('/api/taken-by')
         .then(res => res.json())
         .then(data => setTakers(Array.isArray(data) ? data : []))
@@ -385,8 +385,8 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
     }
   }, [needsProjects, needsRecipients])
 
-  // Stock leaving the inventory (project / external party) must say who took it
-  const isStockOut = destType !== 'store'
+  // Stock going out to a project (the field) must say who is taking it
+  const needsTaker = destType === 'project'
 
   const refExists = useRefExists(refNo)
   const bodyRef = useScrollOnAdd(lines.length)
@@ -426,7 +426,7 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
     if (destType === 'project' && projectId === NEW_PROJECT_VALUE && !newProjectName.trim()) { setError('Enter the project name.'); return }
     if (destType === 'external' && !recipientId) { setError('Select a recipient, or choose "+ New recipient".'); return }
     if (destType === 'external' && recipientId === NEW_RECIPIENT_VALUE && !newRecipientName.trim()) { setError('Enter the recipient\'s name.'); return }
-    if (isStockOut && !takenBy.trim()) { setError('Enter who is taking the stock (Taken by).'); return }
+    if (needsTaker && !takenBy.trim()) { setError('Enter who is taking the stock to the project (Taken by).'); return }
 
     setLoading(true); setError(''); setSaved('')
     try {
@@ -434,7 +434,7 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
         sourceStoreId: store.id,
         refNo: refNo.trim() || null,
         entryDate,
-        takenBy: isStockOut ? takenBy.trim() : null,
+        takenBy: needsTaker ? takenBy.trim() : null,
         items: filled.map(l => ({ entryId: l.entryId, quantity: parseFloat(l.quantity) })),
       }
 
@@ -470,7 +470,7 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
       if (!keepOpen) { onDone(); return }
 
       setSaved(`Saved ${data.count} item${data.count === 1 ? '' : 's'}${data.refNo ? ` under ${data.refNo}` : ''}. Enter the next ref no.`)
-      if (isStockOut) {
+      if (needsTaker) {
         const name = takenBy.trim()
         setTakers(list => (list.includes(name) ? list : [...list, name].sort()))
         setTakenBy('')
@@ -583,7 +583,7 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
             )}
           </div>
 
-          {isStockOut && (
+          {needsTaker && (
             <div className={styles.fieldRow}>
               <div className={styles.field}>
                 <label>Taken by <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -603,7 +603,7 @@ export function StockMoveModal({ title, destinations, store, allStores, onClose,
           <span className={styles.fieldHint}>
             {refExists
               ? <>Ref no. <strong>{refNo.trim()}</strong> already has entries. These items will be added to it.</>
-              : isStockOut
+              : needsTaker
                 ? 'The ref no., date, destination and taken by apply to every item below.'
                 : 'The ref no., date and destination apply to every item below.'}
           </span>
