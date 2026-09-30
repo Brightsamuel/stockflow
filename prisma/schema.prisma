@@ -95,13 +95,17 @@ model StockLog {
   projectId   String?    // set when stock is issued to a project (used in the field)
   takenBy     String?    // who collected the stock on a stock out
   adjustment  Float?     // signed change to the store balance made by an EDIT, DELETE or RESTORE
+  deletionId  String?    // set while the note this line belongs to is deleted; such lines no longer count
   store       Store      @relation(fields: [storeId], references: [id])
   product     Product    @relation(fields: [productId], references: [id])
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
   recipient   Recipient? @relation(fields: [recipientId], references: [id])
   owner       StockOwner @relation(fields: [ownerId], references: [id])
   project     Project?   @relation(fields: [projectId], references: [id])
+  deletion    Deletion?  @relation(fields: [deletionId], references: [id], onDelete: Restrict)
   createdAt   DateTime   @default(now())
+
+  @@index([deletionId])
 }
 
 model Transfer {
@@ -117,6 +121,7 @@ model Transfer {
   takenBy       String?
   refNo         String?
   entryDate     DateTime   @default(now())
+  deletionId    String?    // set while the note this line belongs to is deleted
   createdAt     DateTime   @default(now())
 
   sourceStore Store      @relation("SourceStore", fields: [sourceStoreId], references: [id])
@@ -126,6 +131,35 @@ model Transfer {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
   owner       StockOwner @relation(fields: [ownerId], references: [id])
   project     Project?   @relation(fields: [projectId], references: [id])
+  deletion    Deletion?  @relation(fields: [deletionId], references: [id], onDelete: Restrict)
+
+  @@index([deletionId])
+}
+
+// A received, issue or transfer note deleted as a whole (Super admin). Its log lines and transfer
+// rows stay in the database pointing here and are left out of stock, reports, product history and
+// documents; restoring the deletion counts them again. Deletions are never removed, so this is
+// also the record of who deleted what, when and why, and who restored it.
+model Deletion {
+  id           String     @id @default(cuid())
+  kind         String     // RECEIPT | FIELD | EXTERNAL | TRANSFER (see lib/notes)
+  refNo        String?
+  title        String     // e.g. "Goods Received Note"
+  summary      String     // e.g. "Main Store → Site A"
+  itemCount    Int
+  value        Float
+  entryDate    DateTime   // the note's date (its first line's, when it spans several days)
+  reason       String
+  document     Json       // the note as it read when deleted, for viewing afterwards
+  removedRows  Json?      // store rows the deletion emptied and removed, so a restore can put them back
+  userId       String?
+  user         User?      @relation("DeletedBy", fields: [userId], references: [id], onDelete: SetNull)
+  restoredAt   DateTime?
+  restoredById String?
+  restoredBy   User?      @relation("RestoredBy", fields: [restoredById], references: [id], onDelete: SetNull)
+  logs         StockLog[]
+  transfers    Transfer[]
+  createdAt    DateTime   @default(now())
 }
 
 model User {
@@ -140,6 +174,8 @@ model User {
   createdAt    DateTime @default(now())
   stockLogs    StockLog[]
   transfers    Transfer[]
+  deletions    Deletion[] @relation("DeletedBy")
+  restorations Deletion[] @relation("RestoredBy")
 }
 
 model Recipient {

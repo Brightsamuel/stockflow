@@ -81,6 +81,7 @@
 
 .stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .stackLg { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.stackTight { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .rowBetween { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .rowEnd { align-items: flex-end; }
@@ -311,15 +312,27 @@ select.inputSm { padding-right: 30px; background-position: right 8px center; }
   color: var(--text-secondary);
 }
 .preset:hover { border-color: var(--border-hover); color: var(--text); }
+.presetActive,
+.presetActive:hover { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-strong); }
+
+/* Filter rows: product search, owner and dates side by side, wrapping on small screens */
+.fieldProduct { flex: 1 1 260px; max-width: 460px; }
+.fieldOwner { flex: 0 1 190px; }
+.fieldDate { flex: 0 1 160px; }
+
+/* Content being reloaded */
+.busy { opacity: 0.55; pointer-events: none; transition: opacity 0.15s ease; }
 
 /* ── Tables ──────────────────────────────────────────────────────────────── */
 .tableWrap { overflow-x: auto; }
 
+/* Cells inherit the text colour from the table, so .cellMuted, .textDanger and the like win */
 .table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
+  color: var(--text);
 }
 
 .table th {
@@ -338,7 +351,6 @@ select.inputSm { padding-right: 30px; background-position: right 8px center; }
 .table td {
   padding: 11px 14px;
   border-bottom: 1px solid var(--border);
-  color: var(--text);
   vertical-align: middle;
 }
 
@@ -361,6 +373,7 @@ select.inputSm { padding-right: 30px; background-position: right 8px center; }
 .cellStrong { font-weight: 600; color: var(--text); }
 .cellMuted { color: var(--text-muted); }
 .cellSub { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.textDanger { font-weight: 650; color: var(--danger); }
 .cellActions { display: flex; justify-content: flex-end; gap: 2px; }
 .cellLink { font-weight: 600; color: var(--text); }
 .cellLink:hover { color: var(--brand); text-decoration: underline; }
@@ -445,6 +458,8 @@ select.inputSm { padding-right: 30px; background-position: right 8px center; }
   min-width: 0;
 }
 .miniLabel { font-size: 12px; color: var(--text-muted); }
+/* A row of figures that reads left to right, e.g. opening → movements → closing */
+.summaryStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; }
 .miniValue { margin-top: 2px; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); }
 
 /* ── Tabs, segmented control, report picker ──────────────────────────────── */
@@ -552,6 +567,7 @@ select.inputSm { padding-right: 30px; background-position: right 8px center; }
 .alertInfo { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
 .alertWarning { background: #fffbeb; border-color: #fde68a; color: #78350f; }
 .alertNeutral { background: var(--surface-muted); border-color: var(--border); color: var(--text-secondary); }
+.alertNote { margin-top: 4px; padding-top: 6px; border-top: 1px solid currentColor; border-top-color: color-mix(in srgb, currentColor 20%, transparent); }
 
 .empty {
   display: flex;
@@ -881,6 +897,19 @@ a.listItem:hover { background: var(--surface-muted); }
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
 }
+
+/* Screen-only actions for one document (e.g. Delete note), above its header */
+.docActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--border);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
 .docTitle { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
 .docSubtitle { margin-top: 4px; font-size: 12.5px; color: var(--text-muted); }
 
@@ -976,6 +1005,9 @@ a.listItem:hover { background: var(--surface-muted); }
   .cols4,
   .formRow2,
   .formRow3 { grid-template-columns: minmax(0, 1fr); }
+  .fieldProduct,
+  .fieldOwner { flex: 1 1 100%; max-width: none; }
+  .fieldDate { flex: 1 1 130px; }
   .backdrop { padding: 0; align-items: flex-end; }
   .modal { max-width: none; max-height: 94vh; border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
   .modalFooter { border-radius: 0; }

@@ -19,6 +19,9 @@ import StockMoveModal, { TRANSFER_DESTINATIONS, STOCK_OUT_DESTINATIONS } from '.
 import EditItemModal from './EditItemModal'
 import ui from '@/styles/ui.module.css'
 
+// Lines recorded on a received, issue or transfer note (the rest are adjustments)
+const NOTE_TYPES = ['IN', 'TRANSFER_IN', 'TRANSFER_OUT']
+
 export default function StoreDashboard({ store, items, deletedItems = [], movements, movementTotal, allStores, currentUser }) {
   const router = useRouter()
   const { confirm, toast } = useConfirm()
@@ -254,7 +257,9 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
                           <td>
                             {m.refNo
                               ? <Link href={`/notes?ref=${encodeURIComponent(m.refNo)}`} className={`${ui.link} ${ui.mono}`} title="Open the printable note">{m.refNo}</Link>
-                              : <span className={ui.cellMuted}>—</span>}
+                              : NOTE_TYPES.includes(m.type)
+                                ? <Link href={`/notes?log=${m.id}`} className={ui.link} title="Saved without a ref no.: open its note">Note</Link>
+                                : <span className={ui.cellMuted}>—</span>}
                           </td>
                           <td className={m.takenBy ? undefined : ui.cellMuted}>{m.takenBy || '—'}</td>
                           <td className={ui.cellMuted}>{m.by || '—'}</td>

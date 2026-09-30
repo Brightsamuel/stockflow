@@ -8,8 +8,8 @@ import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
 import { isAdminRole } from '@/lib/constants'
 import { ownerLabel } from '@/lib/owners'
-import { movementKind, signedChange } from '@/lib/movements'
-import { TIME_ZONE, fmtDate, fmtMoney, fmtNum, fmtSigned, plural, todayInput } from '@/lib/format'
+import { LIVE, movementKind, signedChange } from '@/lib/movements'
+import { TIME_ZONE, TIME_ZONE_OFFSET, fmtDate, fmtMoney, fmtNum, fmtSigned, plural, todayInput } from '@/lib/format'
 import PageHeader from '@/components/ui/PageHeader'
 import Card from '@/components/ui/Card'
 import StatCard from '@/components/ui/StatCard'
@@ -24,9 +24,9 @@ function greeting() {
   return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 }
 
+// Midnight on the 1st of this month, Kampala time
 function monthStart() {
-  const [y, m] = todayInput().split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, 1))
+  return new Date(`${todayInput().slice(0, 8)}01T00:00:00${TIME_ZONE_OFFSET}`)
 }
 
 export default async function OverviewPage() {
@@ -51,11 +51,11 @@ export default async function OverviewPage() {
     }),
     prisma.product.count(),
     prisma.stockLog.findMany({
-      where: { entryDate: { gte: monthStart() }, type: { in: ['IN', 'TRANSFER_OUT'] } },
+      where: { entryDate: { gte: monthStart() }, type: { in: ['IN', 'TRANSFER_OUT'] }, ...LIVE },
       select: { type: true, quantity: true, rate: true, projectId: true, recipientId: true, store: { select: { category: { select: { isSystem: true } } } } },
     }),
     prisma.stockLog.findMany({
-      where: { type: { not: 'TRANSFER_IN' } },
+      where: { type: { not: 'TRANSFER_IN' }, ...LIVE },
       orderBy: { createdAt: 'desc' },
       take: 8,
       include: {

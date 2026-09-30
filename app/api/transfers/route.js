@@ -8,7 +8,7 @@ export async function GET(req) {
     await requireUser()
     const storeId = new URL(req.url).searchParams.get("storeId")
     const transfers = await prisma.transfer.findMany({
-      where: storeId ? { OR: [{ sourceStoreId: storeId }, { targetStoreId: storeId }] } : undefined,
+      where: { deletionId: null, ...(storeId && { OR: [{ sourceStoreId: storeId }, { targetStoreId: storeId }] }) },
       include: {
         product: { include: { unit: true } },
         sourceStore: { select: { id: true, name: true, category: { select: { name: true } } } },

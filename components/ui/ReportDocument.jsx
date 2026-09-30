@@ -30,11 +30,13 @@ export function CompanyBlock({ settings }) {
 }
 
 // The on-screen (and printed) version of a report, product history or note. Sections use the
-// same column definitions as the PDF and Excel exports (see lib/tables).
-export default function ReportDocument({ title, subtitle, meta = [], settings, sections, signatures = [], chips, printPage = false }) {
+// same column definitions as the PDF and Excel exports (see lib/tables). actions: screen-only
+// controls for this one document, shown above it and never printed.
+export default function ReportDocument({ title, subtitle, meta = [], settings, sections, signatures = [], chips, actions, printPage = false }) {
   const wide = sections.some(s => s.cols.length > 8)
   return (
     <article className={`${ui.doc} ${wide ? ui.docWide : ''}`} data-print-page={printPage ? '' : undefined}>
+      {actions && <div className={ui.docActions} data-no-print>{actions}</div>}
       <header className={ui.docHeader}>
         <div>
           <h2 className={ui.docTitle}>{title}</h2>

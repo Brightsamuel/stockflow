@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma"
 import { requireUser } from "@/lib/auth"
-import { json, fail, handleError } from "@/lib/http"
+import { json, fail, handleError, parseDateRange } from "@/lib/http"
 import { LEDGER_TYPES } from "@/lib/movements"
 import {
   buildReport, buildRecipientReport, buildRefReport, buildProjectReport, buildLedgerReport, buildLowStockReport,
@@ -31,15 +31,6 @@ async function storeScope(storeId, categoryId) {
   return { storeIds: null, label: "All stores" }
 }
 
-function parseRange(fromRaw, toRaw) {
-  if (!fromRaw || !toRaw) return { error: "Choose both dates" }
-  const from = new Date(`${fromRaw}T00:00:00.000Z`)
-  const to = new Date(`${toRaw}T23:59:59.999Z`)
-  if (isNaN(from) || isNaN(to)) return { error: "Invalid date" }
-  if (from > to) return { error: "The From date must be on or before the To date" }
-  return { from, to }
-}
-
 export async function GET(req) {
   try {
     await requireUser()
@@ -60,8 +51,7 @@ export async function GET(req) {
       return json({ scope, label: `Low stock · ${target.label}`, rows })
     }
 
-    const range = parseRange(p.get("from"), p.get("to"))
-    if (range.error) return fail(range.error)
+    const range = parseDateRange(p.get("from"), p.get("to"), { required: true })
     const period = { from: p.get("from"), to: p.get("to") }
 
     switch (scope) {

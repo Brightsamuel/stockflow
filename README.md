@@ -5,9 +5,9 @@ Multi-store inventory for teams that receive stock, move it between stores and i
 - **Stores and categories.** Stock in (one ref no. for many items), transfers between stores, and stock out to a project (recorded as *used*, with *Taken by*) or to an external party (*issued*).
 - **Products.** One catalogue for every store, with opening balances that can be issued like any other stock.
 - **Stock owners.** Optional, per batch; shown in stores, reports and history.
-- **History.** Every movement of a product, permanently kept: received, transferred, used, issued, adjusted, removed and restored.
+- **History.** Every movement of a product, permanently kept: received, transferred, used, issued, adjusted, removed and restored. Pick any period to see the opening balance, what came in and went out, the closing balance and each store's balance after every movement; print it, save it as a PDF or export it to Excel.
 - **Reports.** Store and category balances (opening, added, deducted, adjusted, closing and value), a movement ledger, external issues, low stock, field records and ref no. lookups. Every report can be printed, saved as a PDF or exported to Excel, with the company header.
-- **Documents.** Printable Goods Received, Material Issue, Goods Issue and Stock Transfer notes with signature lines, by ref no.
+- **Documents.** Printable Goods Received, Material Issue, Goods Issue and Stock Transfer notes with signature lines, by ref no. (or, for stock saved without one, from the store's movement log). A note entered by mistake can be deleted with all its lines by a Super admin; see below.
 - **Administration.** Users with Standard / Admin / Super admin roles, lists (units, owners, projects, recipients) and company settings.
 
 ## Tech stack
@@ -52,11 +52,19 @@ The app adds `connect_timeout=30` to the database URL when it isn't set, so a da
 |---|---|---|---|
 | Stock in, transfer, stock out, edit items, reports, documents | ✓ | ✓ | ✓ |
 | Opening balances, stores and categories, lists, users, settings | | ✓ | ✓ |
-| Remove / restore items, activity tracking, delete users, create Super admins | | | ✓ |
+| Remove / restore items, delete / restore notes, activity tracking, delete users, create Super admins | | | ✓ |
 
 ## Records are permanent
 
 History is never deleted. Stores, products, units, owners, projects, recipients and users can only be deleted while nothing refers to them; otherwise they are kept (users can be deactivated instead). Edits to an item's quantity and removals are recorded as adjustments, so reports always reconcile with the stock on hand.
+
+### Deleting a note entered by mistake
+
+A Super admin can delete a whole received, issue or transfer note from **Documents** (the *Delete note* button on the note). Deleting it takes back what its lines did: stock it received comes out of the store again, and stock it issued or transferred goes back to the store it left. The dialog shows each store's balance before and after, and asks for a reason.
+
+Nothing is erased. The note's lines stay in the database marked as deleted, and are left out of stock, reports, product history, documents and the movement log. **Documents → Deleted** lists every deleted note with who deleted it, when and why; each can be viewed and restored, which counts it again and moves its stock back as it was recorded.
+
+A delete (or restore) is refused rather than let a balance go below zero: for example a receipt whose stock has since been issued, until that issue is dealt with. Opening balances are changed from Products, not deleted as notes.
 
 ## Security
 
@@ -90,7 +98,8 @@ app/
   login/          sign-in page
 components/       screens and the app shell; components/ui/ holds shared building blocks
 dashboard/        the store page and its stock in / transfer / stock out / edit forms
-lib/              data access and rules: auth, reports, history, notes, stock movements, formatting
+lib/              data access and rules: auth, reports, history, notes and their deletion, stock
+                  movements, formatting (dates are whole days in Kampala time, UTC+3)
 prisma/           schema and migrations
 styles/           the design system (ui.module.css)
 ```

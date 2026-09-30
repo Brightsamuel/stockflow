@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
 import { ownerLabel } from '@/lib/owners'
-import { movementKind, signedChange } from '@/lib/movements'
+import { LIVE, movementKind, signedChange } from '@/lib/movements'
 import StoreDashboard from '@/dashboard/StoreDashboard'
 
 const MOVEMENT_LIMIT = 150
@@ -45,12 +45,12 @@ export default async function StorePage({ params }) {
     }),
     // Stock moved per row, newest first, for "Last added" and "Deducted"
     prisma.stockLog.findMany({
-      where: { storeId: id, type: { in: ['IN', 'TRANSFER_IN', 'TRANSFER_OUT'] } },
+      where: { storeId: id, type: { in: ['IN', 'TRANSFER_IN', 'TRANSFER_OUT'] }, ...LIVE },
       orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
       select: { productId: true, ownerId: true, type: true, quantity: true },
     }),
     prisma.stockLog.findMany({
-      where: { storeId: id },
+      where: { storeId: id, ...LIVE },
       include: {
         product: { include: { unit: true } },
         owner: { select: { id: true, name: true } },
@@ -59,7 +59,7 @@ export default async function StorePage({ params }) {
       orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
       take: MOVEMENT_LIMIT,
     }),
-    prisma.stockLog.count({ where: { storeId: id } }),
+    prisma.stockLog.count({ where: { storeId: id, ...LIVE } }),
     isSuperAdmin
       ? prisma.stockEntry.findMany({
           where: { storeId: id, isDeleted: true },
@@ -100,6 +100,7 @@ export default async function StorePage({ params }) {
 
   const movements = logs.map(l => ({
     id: l.id,
+    type: l.type,
     date: l.entryDate,
     kind: movementKind(l),
     productId: l.productId,

@@ -1,9 +1,11 @@
 import prisma from "@/lib/prisma"
 import { requireUser } from "@/lib/auth"
 import { json, handleError } from "@/lib/http"
+import { LIVE } from "@/lib/movements"
 
 // GET /api/receipts?q=RCT
-// Distinct ref nos (newest first) matching q, with how many lines each has and what kind it is
+// Distinct ref nos (newest first) matching q, with how many lines each has and what kind it is.
+// Lines of deleted notes are left out, so a deleted ref no. can be used again.
 export async function GET(req) {
   try {
     await requireUser()
@@ -11,7 +13,7 @@ export async function GET(req) {
 
     const groups = await prisma.stockLog.groupBy({
       by: ["refNo"],
-      where: { refNo: q ? { contains: q, mode: "insensitive" } : { not: null } },
+      where: { refNo: q ? { contains: q, mode: "insensitive" } : { not: null }, ...LIVE },
       _count: { _all: true },
       _max: { entryDate: true },
       orderBy: { _max: { entryDate: "desc" } },
@@ -19,7 +21,7 @@ export async function GET(req) {
     })
 
     const logs = await prisma.stockLog.findMany({
-      where: { refNo: { in: groups.map(g => g.refNo) } },
+      where: { refNo: { in: groups.map(g => g.refNo) }, ...LIVE },
       select: {
         refNo: true,
         type: true,

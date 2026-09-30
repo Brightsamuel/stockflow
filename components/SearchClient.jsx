@@ -3,25 +3,40 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { IconAlertCircle, IconArrowLeft, IconHistory, IconPackage, IconSearch } from '@tabler/icons-react'
 import PageHeader from '@/components/ui/PageHeader'
+import Field from '@/components/ui/Field'
 import ExportBar from '@/components/ui/ExportBar'
 import ReportDocument from '@/components/ui/ReportDocument'
 import EmptyState from '@/components/ui/EmptyState'
 import { MovementBadge } from '@/components/ui/Badge'
 import { api } from '@/lib/api'
 import { NO_OWNER } from '@/lib/owners'
-import { fmtDate, fmtMoney, fmtNum, fmtSigned, plural } from '@/lib/format'
+import { datePresets, fmtDate, fmtMoney, fmtNum, fmtSigned, plural } from '@/lib/format'
 import { withTotals } from '@/lib/tables'
 import { exportExcel, exportPdf, fileSafe } from '@/lib/exporters'
 import ui from '@/styles/ui.module.css'
 
-const BALANCE_COLS = [
-  { label: 'Store', value: r => r.store, strong: true },
-  { label: 'Category', value: r => r.category, muted: true },
-  { label: 'Owner', value: r => r.owner },
-  { label: 'Quantity', value: r => r.quantity, num: true, total: true },
-  { label: 'Rate (UGX)', value: r => r.rate, num: true },
-  { label: 'Value (UGX)', value: r => r.value, num: true, total: true },
-]
+// Movements recorded on a received, issue or transfer note (the others are adjustments)
+const NOTE_KINDS = ['IN', 'TRANSFER_IN', 'TRANSFER_OUT', 'USED', 'ISSUED']
+
+function noteHref(row) {
+  if (row.refNo) return `/notes?ref=${encodeURIComponent(row.refNo)}`
+  return NOTE_KINDS.includes(row.kind) ? `/notes?log=${row.id}` : null
+}
+
+function balanceCols(ranged) {
+  return [
+    { label: 'Store', value: r => r.store, strong: true },
+    { label: 'Category', value: r => r.category, muted: true },
+    { label: 'Owner', value: r => r.owner },
+    ...(ranged ? [{ label: 'Opening', value: r => r.opening, num: true, total: true }] : []),
+    { label: 'Added', value: r => r.added, num: true, total: true },
+    { label: 'Deducted', value: r => r.deducted, num: true, total: true },
+    { label: 'Adjusted', value: r => r.adjusted, num: true, total: true, format: fmtSigned },
+    { label: ranged ? 'Closing' : 'Balance', value: r => r.closing, num: true, total: true },
+    { label: 'Rate (UGX)', value: r => r.rate, num: true },
+    { label: 'Value (UGX)', value: r => r.value, num: true, total: true },
+  ]
+}
 
 const MOVEMENT_COLS = [
   { label: 'Date', value: r => fmtDate(r.date), nowrap: true },
@@ -29,32 +44,63 @@ const MOVEMENT_COLS = [
   { label: 'Store', value: r => r.store },
   { label: 'Owner', value: r => r.owner },
   { label: 'Change', value: r => r.change, num: true, format: fmtSigned },
+  { label: 'Store balance', value: r => r.balance, num: true },
   { label: 'Rate', value: r => r.rate, num: true },
   { label: 'Value (UGX)', value: r => r.value || null, num: true },
   {
     label: 'Ref no.',
     value: r => r.refNo,
     nowrap: true,
-    render: r => (r.refNo ? <Link href={`/notes?ref=${encodeURIComponent(r.refNo)}`} className={`${ui.link} ${ui.mono}`}>{r.refNo}</Link> : '—'),
+    render: r => {
+      const href = noteHref(r)
+      if (!href) return '—'
+      return r.refNo
+        ? <Link href={href} className={`${ui.link} ${ui.mono}`}>{r.refNo}</Link>
+        : <Link href={href} className={ui.link} title="Saved without a ref no.: open its note">Note</Link>
+    },
   },
   { label: 'Details', value: r => r.note, muted: true },
   { label: 'Taken by', value: r => r.takenBy },
   { label: 'By', value: r => r.by, muted: true },
 ]
 
-function historyUrl(productId, ownerId) {
-  return `/api/products/${productId}/logs${ownerId ? `?ownerId=${encodeURIComponent(ownerId)}` : ''}`
+// The summary above the tables: on screen and in print as tiles, in PDF / Excel as header lines
+function summaryItems(history, filters) {
+  const { summary: s, product } = history
+  const ranged = Boolean(filters.from || filters.to)
+  const qty = n => `${fmtNum(n)} ${product.unit}`
+  return [
+    [ranged ? `Opening, ${filters.from ? fmtDate(filters.from) : 'first record'}` : 'Opening balance', qty(s.opening)],
+    ['Received', fmtSigned(s.received)],
+    ['Used on projects', fmtSigned(-s.used)],
+    ['Issued externally', fmtSigned(-s.issued)],
+    ...(s.transferred ? [['Moved between stores', fmtNum(s.transferred)]] : []),
+    ['Adjustments', fmtSigned(s.adjusted)],
+    [ranged ? `Closing, ${filters.to ? fmtDate(filters.to) : 'today'}` : 'Balance now', qty(s.closing)],
+    ['Closing value', fmtMoney(s.closingValue)],
+  ]
 }
 
-// Product history: search a product, then see its balances and every movement, and print,
-// save as PDF or export them. History is permanent; nothing here can delete it.
-export default function SearchClient({ owners = [], settings, initialHistory = null }) {
+function historyQuery({ ownerId, from, to }) {
+  const params = new URLSearchParams()
+  if (ownerId) params.set('ownerId', ownerId)
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  return params.toString()
+}
+
+// Product history: search a product, then see its balances and every movement for any period,
+// and print, save as PDF or export them. History is permanent; nothing here can delete it.
+export default function SearchClient({ owners = [], settings, initialHistory = null, initialFilters = {} }) {
+  const presets = datePresets()
   const [q, setQ] = useState(initialHistory?.product.name ?? '')
   const [suggestions, setSuggestions] = useState([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [results, setResults] = useState(null)
   const [history, setHistory] = useState(initialHistory)
-  const [ownerId, setOwnerId] = useState('')
+  const [filters, setFilters] = useState({ ownerId: initialFilters.ownerId ?? '', from: initialFilters.from ?? '', to: initialFilters.to ?? '' })
+  const [shown, setShown] = useState({ ownerId: initialFilters.ownerId ?? '', from: initialFilters.from ?? '', to: initialFilters.to ?? '' })
+  const [order, setOrder] = useState('newest')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -71,17 +117,27 @@ export default function SearchClient({ owners = [], settings, initialHistory = n
   }, [term])
 
   // Keeps the address bar in step (so the page can be bookmarked or refreshed) without a reload
-  function setAddress(productId) {
-    window.history.replaceState(null, '', productId ? `/search?product=${productId}` : '/search')
+  function setAddress(productId, next = filters) {
+    if (!productId) {
+      window.history.replaceState(null, '', '/search')
+      return
+    }
+    const params = new URLSearchParams({ product: productId })
+    if (next.ownerId) params.set('owner', next.ownerId)
+    if (next.from) params.set('from', next.from)
+    if (next.to) params.set('to', next.to)
+    window.history.replaceState(null, '', `/search?${params}`)
   }
 
-  async function openProduct(productId, owner = ownerId) {
+  async function openProduct(productId, next = filters) {
     setLoading(true); setError(''); setShowSuggestions(false)
     try {
-      const data = await api(historyUrl(productId, owner))
+      const query = historyQuery(next)
+      const data = await api(`/api/products/${productId}/logs${query ? `?${query}` : ''}`)
       setHistory(data)
+      setShown(next)
       setQ(data.product.name)
-      setAddress(productId)
+      setAddress(productId, next)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -89,13 +145,13 @@ export default function SearchClient({ owners = [], settings, initialHistory = n
     }
   }
 
-  async function runSearch(e, owner = ownerId) {
+  async function runSearch(e, next = filters) {
     e?.preventDefault()
     if (!term) return
     setLoading(true); setError(''); setShowSuggestions(false)
     try {
       const params = new URLSearchParams({ q: term })
-      if (owner) params.set('ownerId', owner)
+      if (next.ownerId) params.set('ownerId', next.ownerId)
       const data = await api(`/api/search?${params}`)
       setResults(Array.isArray(data) ? data : [])
       setHistory(null)
@@ -107,10 +163,17 @@ export default function SearchClient({ owners = [], settings, initialHistory = n
     }
   }
 
-  function changeOwner(next) {
-    setOwnerId(next)
+  // Owner and period apply straight away to the history on screen
+  function changeFilters(patch) {
+    const next = { ...filters, ...patch }
+    setFilters(next)
+    if (next.from && next.to && next.from > next.to) {
+      setError('The From date must be on or before the To date.')
+      return
+    }
+    setError('')
     if (history) openProduct(history.product.id, next)
-    else if (results) runSearch(null, next)
+    else if (results && 'ownerId' in patch) runSearch(null, next)
   }
 
   function backToResults() {
@@ -118,33 +181,37 @@ export default function SearchClient({ owners = [], settings, initialHistory = n
     setAddress(null)
   }
 
-  const ownerLabel = ownerId === NO_OWNER ? 'No owner' : owners.find(o => o.id === ownerId)?.name
-  const subtitle = [
-    `Unit: ${history?.product.unit ?? ''}`,
-    ownerLabel && `Owner: ${ownerLabel}`,
-    `As at ${fmtDate(new Date())}`,
-  ].filter(Boolean).join(' · ')
+  const ranged = Boolean(shown.from || shown.to)
+  const ownerLabel = shown.ownerId === NO_OWNER ? 'No owner' : owners.find(o => o.id === shown.ownerId)?.name
+  const period = ranged
+    ? `${shown.from ? fmtDate(shown.from) : 'First record'} – ${shown.to ? fmtDate(shown.to) : fmtDate(new Date())}`
+    : `All time, as at ${fmtDate(new Date())}`
+  const subtitle = history && [`Unit: ${history.product.unit}`, ownerLabel && `Owner: ${ownerLabel}`, period].filter(Boolean).join(' · ')
+  const summary = history ? summaryItems(history, shown) : []
+  const movements = history ? (order === 'newest' ? [...history.rows].reverse() : history.rows) : []
   const sections = history ? withTotals([
-    { title: 'Balances', sheet: 'Balances', cols: BALANCE_COLS, rows: history.balances, empty: 'Not held in any store right now.' },
-    { title: 'Movements', sheet: 'Movements', cols: MOVEMENT_COLS, rows: history.rows, empty: 'No movements recorded yet.', totals: false },
+    { title: ranged ? 'Balances for the period' : 'Balances', sheet: 'Balances', cols: balanceCols(ranged), rows: history.balances, empty: 'No stock and no movements in this period.' },
+    { title: 'Movements', sheet: 'Movements', cols: MOVEMENT_COLS, rows: movements, empty: ranged ? 'No movements in this period.' : 'No movements recorded yet.', totals: false },
   ]) : []
   const exportArgs = history && {
     title: `Product history · ${history.product.name}`,
     subtitle,
+    meta: summary,
     settings,
-    fileBase: `history-${fileSafe(history.product.name)}`,
+    fileBase: `history-${fileSafe(history.product.name)}${shown.from || shown.to ? `-${shown.from || 'start'}-to-${shown.to || 'today'}` : ''}`,
     sections,
   }
+  const activePreset = !filters.from && !filters.to ? 'All time' : presets.find(p => p.from === filters.from && p.to === filters.to)?.label
 
   return (
     <>
-      <PageHeader title="Product history" subtitle="Every movement of a product across all stores, from the opening balance to today" />
+      <PageHeader title="Product history" subtitle="Every movement of a product across all stores, for any period, from the opening balance to today" />
 
       <div className={ui.page}>
         <form className={ui.card} onSubmit={runSearch} data-no-print>
-          <div className={ui.cardBody}>
+          <div className={`${ui.cardBody} ${ui.stack}`}>
             <div className={`${ui.row} ${ui.rowEnd}`}>
-              <div className={`${ui.field} ${ui.toolbarSearch}`} style={{ maxWidth: 520 }}>
+              <div className={`${ui.field} ${ui.fieldProduct}`}>
                 <span className={ui.label}>Product</span>
                 <div className={ui.inputWrap}>
                   <span className={ui.inputIcon}><IconSearch size={16} /></span>
@@ -176,17 +243,35 @@ export default function SearchClient({ owners = [], settings, initialHistory = n
                   )}
                 </div>
               </div>
-              <label className={ui.field} style={{ width: 200 }}>
-                <span className={ui.label}>Stock owner</span>
-                <select className={ui.input} value={ownerId} onChange={e => changeOwner(e.target.value)}>
+              <Field label="Stock owner" className={ui.fieldOwner}>
+                <select className={ui.input} value={filters.ownerId} onChange={e => changeFilters({ ownerId: e.target.value })}>
                   <option value="">All owners</option>
                   <option value={NO_OWNER}>No owner</option>
                   {owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
-              </label>
+              </Field>
+              <Field label="From" className={ui.fieldDate}>
+                <input type="date" className={ui.input} value={filters.from} max={filters.to || undefined} onChange={e => changeFilters({ from: e.target.value })} />
+              </Field>
+              <Field label="To" className={ui.fieldDate}>
+                <input type="date" className={ui.input} value={filters.to} min={filters.from || undefined} onChange={e => changeFilters({ to: e.target.value })} />
+              </Field>
               <button type="submit" className={`${ui.btn} ${ui.btnPrimary}`} disabled={loading || !term}>
                 {loading ? <span className={ui.spinner} /> : <IconSearch size={16} />} Search
               </button>
+            </div>
+            <div className={ui.presets} role="group" aria-label="Period">
+              {[{ label: 'All time', from: '', to: '' }, ...presets].map(p => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className={`${ui.preset} ${activePreset === p.label ? ui.presetActive : ''}`}
+                  aria-pressed={activePreset === p.label}
+                  onClick={() => changeFilters({ from: p.from, to: p.to })}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
           </div>
         </form>
@@ -251,38 +336,57 @@ export default function SearchClient({ owners = [], settings, initialHistory = n
           <section className={ui.card} data-no-print>
             <EmptyState icon={IconHistory} title="Look up a product">
               Search for a product to see where it is held and every movement it has had: received, transferred, used on
-              projects, issued and adjusted. The history can be printed, saved as a PDF or exported to Excel.
+              projects, issued and adjusted. Pick a period to see the opening and closing balance for it. The history
+              can be printed, saved as a PDF or exported to Excel.
             </EmptyState>
           </section>
         )}
 
         {history && (
           <>
-            <div className={ui.rowBetween} data-no-print>
-              {results ? (
+            {results && (
+              <div data-no-print>
                 <button type="button" className={`${ui.btn} ${ui.btnGhost} ${ui.btnSm}`} onClick={backToResults}>
                   <IconArrowLeft size={16} /> Back to results
                 </button>
-              ) : <span />}
-              <div className={ui.chips}>
-                <span className={ui.chip}>Balance <strong>{fmtNum(history.totalQuantity)} {history.product.unit}</strong></span>
-                <span className={ui.chip}>Value <strong>{fmtMoney(history.totalValue)}</strong></span>
-                <span className={ui.chip}>Stores <strong>{fmtNum(history.balances.filter(b => b.storeId).length)}</strong></span>
               </div>
-            </div>
+            )}
 
             <ExportBar
-              info={<strong className={ui.strong}>{plural(history.rows.length, 'movement')}</strong>}
+              info={(
+                <>
+                  <strong className={ui.strong}>{plural(history.rows.length, 'movement')}</strong>
+                  <div className={ui.segmented} role="group" aria-label="Order">
+                    {[['newest', 'Newest first'], ['oldest', 'Oldest first']].map(([id, label]) => (
+                      <button key={id} type="button" className={`${ui.segment} ${order === id ? ui.segmentActive : ''}`} aria-pressed={order === id} onClick={() => setOrder(id)}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
               onPdf={() => exportPdf(exportArgs)}
               onExcel={() => exportExcel(exportArgs)}
             />
 
-            <ReportDocument
-              title={`Product history · ${history.product.name}`}
-              subtitle={subtitle}
-              settings={settings}
-              sections={sections}
-            />
+            <div className={loading ? ui.busy : undefined} aria-busy={loading}>
+              <ReportDocument
+                title={`Product history · ${history.product.name}`}
+                subtitle={subtitle}
+                settings={settings}
+                sections={sections}
+                chips={(
+                  <div className={ui.summaryStats}>
+                    {summary.map(([label, value]) => (
+                      <div key={label} className={ui.miniStat}>
+                        <div className={ui.miniLabel}>{label}</div>
+                        <div className={ui.miniValue}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+            </div>
           </>
         )}
       </div>
