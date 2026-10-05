@@ -2,8 +2,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import {
-  IconAlertCircle, IconAlertTriangle, IconBuildingStore, IconFileText, IconFolders, IconHash, IconListDetails,
-  IconReportAnalytics, IconTruckDelivery,
+  IconAlertCircle, IconAlertTriangle, IconBuildingStore, IconClipboardList, IconFileText, IconFolders, IconHash, IconListDetails,
+  IconReportAnalytics, IconScale, IconTruckDelivery, IconUsersGroup,
 } from '@tabler/icons-react'
 import PageHeader from '@/components/ui/PageHeader'
 import Field from '@/components/ui/Field'
@@ -23,13 +23,23 @@ import ui from '@/styles/ui.module.css'
 const REPORT_TYPES = [
   { id: 'store', title: 'Store balance', text: 'Opening, received, issued and closing stock for one store', icon: IconBuildingStore },
   { id: 'category', title: 'Category balance', text: 'The same across every store in a category', icon: IconFolders },
+  { id: 'balances', title: 'Stock balances', text: 'The whole inventory per item: every store plus opening stock not yet in a store', icon: IconScale },
   { id: 'ledger', title: 'Movement ledger', text: 'Every movement in a period, line by line', icon: IconListDetails },
   { id: 'external', title: 'External issues', text: 'Stock issued to people and companies outside', icon: IconTruckDelivery },
+  { id: 'projectmaterials', title: 'Project materials', text: 'Received for, issued to, returned from and still held for a project', icon: IconUsersGroup },
   { id: 'lowstock', title: 'Low stock', text: 'Items at or below their alert level right now', icon: IconAlertTriangle },
   { id: 'ref', title: 'Ref no. lookup', text: 'Everything recorded under one ref no.', icon: IconHash },
 ]
 
+// The Field records page: stock used on projects, and each project's materials
+const FIELD_TYPES = [
+  { id: 'field', title: 'Issues to projects', text: 'Every stock out to a project, who took it and its value', icon: IconClipboardList },
+  { id: 'projectmaterials', title: 'Project materials', text: 'Received for, issued to, returned from and still held for a project', icon: IconUsersGroup },
+]
+
 const EMPTY_TEXT = {
+  projectmaterials: 'Nothing was received for, issued to or returned from this project in this period.',
+  balances: 'No stock or activity in this period.',
   store: 'No stock or activity in this period.',
   category: 'No stock or activity in this period.',
   external: 'No stock was issued to external parties in this period.',
@@ -50,8 +60,38 @@ const dateCol = { label: 'Date', value: r => fmtDate(r.date), nowrap: true }
 const owner = { label: 'Owner', value: r => r.ownerName ?? r.owner }
 
 // Columns per report type, shared by the screen, print, PDF and Excel.
-function columnsFor(scope) {
+function columnsFor(scope, rows = []) {
   switch (scope) {
+    case 'projectmaterials':
+      return [
+        { label: 'Store', value: r => r.store },
+        { label: 'Product', value: r => r.product, strong: true },
+        owner,
+        { label: 'Unit', value: r => r.unit, muted: true },
+        { label: 'Held at start', value: r => r.heldStart, num: true, total: true },
+        { label: 'Received for project', value: r => r.received, num: true, total: true },
+        { label: 'Issued to project', value: r => r.issued, num: true, total: true },
+        { label: 'Returned', value: r => r.returned, num: true, total: true },
+        { label: 'Used', value: r => r.used, num: true, total: true },
+        { label: 'Released', value: r => r.released, num: true, total: true },
+        { label: 'Held at end', value: r => r.heldEnd, num: true, total: true },
+      ]
+    case 'balances':
+      return [
+        { label: 'Product', value: r => r.product, strong: true },
+        owner,
+        { label: 'Unit', value: r => r.unit, muted: true },
+        { label: 'Opening', value: r => r.opening, num: true, total: true },
+        { label: 'Received', value: r => r.received, num: true, total: true },
+        { label: 'Used on projects', value: r => r.used, num: true, total: true },
+        { label: 'Issued externally', value: r => r.issued, num: true, total: true },
+        ...(rows.some(r => r.returned) ? [{ label: 'Returned', value: r => r.returned, num: true, total: true }] : []),
+        { label: 'Adjusted', value: r => r.adjusted, num: true, total: true, format: fmtSigned },
+        { label: 'Closing', value: r => r.closing, num: true, total: true },
+        { label: 'In stores', value: r => r.inStores, num: true, total: true },
+        { label: 'Not yet in a store', value: r => r.notInStore, num: true, total: true },
+        { label: 'Value (UGX)', value: r => r.value, num: true, total: true },
+      ]
     case 'store':
     case 'category':
       return [
@@ -81,6 +121,7 @@ function columnsFor(scope) {
         { label: 'Value (UGX)', value: r => r.value, num: true, total: true },
         { label: 'From store', value: r => r.store },
         { label: 'Issued by', value: r => r.issuedBy, muted: true },
+        { label: 'Approved by', value: r => r.approvedBy, muted: true },
       ]
     case 'field':
       return [
@@ -96,6 +137,7 @@ function columnsFor(scope) {
         { label: 'Value (UGX)', value: r => r.value, num: true, total: true },
         { label: 'Taken by', value: r => r.takenBy },
         { label: 'Issued by', value: r => r.issuedBy, muted: true },
+        { label: 'Approved by', value: r => r.approvedBy, muted: true },
       ]
     case 'ledger':
       return [
@@ -144,6 +186,8 @@ function columnsFor(scope) {
 
 function documentTitle(report) {
   switch (report.scope) {
+    case 'balances': return 'Stock balances · Whole inventory'
+    case 'projectmaterials': return `Project materials · ${report.label}`
     case 'store':
     case 'category': return `Stock balance · ${report.label}`
     case 'external': return `External issues · ${report.label}`
@@ -157,6 +201,8 @@ function summaryChips(report) {
   const sum = key => rows.reduce((s, r) => s + (r[key] || 0), 0)
   const distinct = key => new Set(rows.map(r => r[key]).filter(Boolean)).size
   switch (report.scope) {
+    case 'balances': return [['Items', fmtNum(rows.length)], ['Closing value', fmtMoney(sum('value'))], ['Not yet in a store', fmtNum(sum('notInStore'))]]
+    case 'projectmaterials': return [['Lines', fmtNum(rows.length)], ['Issued', fmtNum(sum('issued'))], ['Returned', fmtNum(sum('returned'))], ['Used', fmtNum(sum('used'))], ['Held at end', fmtNum(sum('heldEnd'))]]
     case 'store':
     case 'category': return [['Rows', fmtNum(rows.length)], ['Closing value', fmtMoney(sum('closingValue'))]]
     case 'field': return [['Issues', fmtNum(rows.length)], ['Projects', fmtNum(distinct('project'))], ['People', fmtNum(distinct('takenBy'))], ['Value', fmtMoney(sum('value'))]]
@@ -231,7 +277,11 @@ export default function ReportBuilder({ mode = 'reports', categories = [], owner
       if (!categoryId) { setError('Choose a category.'); return }
       params.set('categoryId', categoryId)
     }
-    if (scope === 'ledger' || scope === 'lowstock') {
+    if (scope === 'projectmaterials') {
+      if (!projectId) { setError('Choose a project.'); return }
+      params.set('projectId', projectId)
+    }
+    if (scope === 'ledger' || scope === 'lowstock' || scope === 'projectmaterials') {
       const [kind, id] = location.split(':')
       if (kind === 'store') params.set('storeId', id)
       if (kind === 'cat') params.set('categoryId', id)
@@ -251,7 +301,7 @@ export default function ReportBuilder({ mode = 'reports', categories = [], owner
     load(new URLSearchParams({ scope: 'ref', refNo: value }))
   }
 
-  const cols = report ? columnsFor(report.scope) : []
+  const cols = report ? columnsFor(report.scope, report.rows) : []
   const sections = report ? withTotals([{ cols, rows: report.rows, empty: EMPTY_TEXT[report.scope] }]) : []
   const subtitle = report ? [
     report.from && `${fmtDate(report.from)} – ${fmtDate(report.to)}`,
@@ -303,14 +353,14 @@ export default function ReportBuilder({ mode = 'reports', categories = [], owner
             <div>
               <h2 className={ui.cardTitle}><IconReportAnalytics size={17} /> {fieldMode ? 'Filters' : 'Build a report'}</h2>
               <p className={ui.cardSubtitle}>
-                {fieldMode ? 'Narrow the records by project, person, owner and period.' : 'Choose a report, set its filters and generate it.'}
+                {fieldMode ? 'Issues to projects, or one project\'s materials: received, issued, returned and still held.' : 'Choose a report, set its filters and generate it.'}
               </p>
             </div>
           </div>
           <div className={`${ui.cardBody} ${ui.stackLg}`}>
-            {!fieldMode && (
+            {(
               <div className={ui.picker} role="radiogroup" aria-label="Report type">
-                {REPORT_TYPES.map(({ id, title, text, icon: Icon }) => (
+                {(fieldMode ? FIELD_TYPES : REPORT_TYPES).map(({ id, title, text, icon: Icon }) => (
                   <button
                     key={id}
                     type="button"
@@ -354,7 +404,15 @@ export default function ReportBuilder({ mode = 'reports', categories = [], owner
                       </select>
                     </Field>
                   )}
-                  {(scope === 'ledger' || scope === 'lowstock') && (
+                  {scope === 'projectmaterials' && (
+                    <Field label="Project" required>
+                      <select className={ui.input} value={projectId} onChange={e => setProjectId(e.target.value)}>
+                        <option value="">Choose a project…</option>
+                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}{p.location ? ` (${p.location})` : ''}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  {(scope === 'ledger' || scope === 'lowstock' || scope === 'projectmaterials') && (
                     <Field label="Stores">
                       <select className={ui.input} value={location} onChange={e => setLocation(e.target.value)}>
                         <option value="">All stores</option>

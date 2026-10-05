@@ -11,10 +11,14 @@ import StatCard from '@/components/ui/StatCard'
 import Modal from '@/components/ui/Modal'
 import Field from '@/components/ui/Field'
 import EmptyState from '@/components/ui/EmptyState'
+import ExportBar from '@/components/ui/ExportBar'
+import ReportDocument from '@/components/ui/ReportDocument'
 import { useConfirm } from '@/components/ConfirmProvider'
 import StockMoveModal, { ISSUE_DESTINATIONS } from '@/dashboard/StockMoveModal'
 import { api } from '@/lib/api'
-import { fmtMoney, fmtNum, plural } from '@/lib/format'
+import { fmtDate, fmtMoney, fmtNum, plural } from '@/lib/format'
+import { withTotals } from '@/lib/tables'
+import { exportExcel, exportPdf } from '@/lib/exporters'
 import ui from '@/styles/ui.module.css'
 
 const NEW_UNIT = '__new_unit__'
@@ -30,6 +34,19 @@ function balancesOf(product) {
     totalValue: product.entries.reduce((s, e) => s + e.quantity * e.rate, 0),
   }
 }
+
+// The catalogue as it prints and exports (same columns as the table on screen)
+const CATALOGUE_COLS = [
+  { label: 'Product', value: p => p.name, strong: true },
+  { label: 'Unit', value: p => p.unit.name, muted: true },
+  { label: 'Opening qty', value: p => p.openingQty, num: true },
+  { label: 'Rate (UGX)', value: p => p.openingRate, num: true },
+  { label: 'Opening value (UGX)', value: p => p.openingQty * p.openingRate, num: true, total: true },
+  { label: 'Not yet in a store', value: p => balancesOf(p).left, num: true },
+  { label: 'Stores holding it', value: p => balancesOf(p).inStores, num: true },
+  { label: 'Total qty', value: p => balancesOf(p).totalQty, num: true },
+  { label: 'Total value (UGX)', value: p => balancesOf(p).totalValue, num: true, total: true },
+]
 
 // Opening qty + rate inputs with the amount worked out as you type
 function OpeningFields({ qty, rate, onQty, onRate, hint }) {
@@ -197,7 +214,8 @@ function EditProductModal({ product, units, isAdmin, onClose, onDone }) {
   )
 }
 
-export default function ProductsManager({ initialProducts, units, allStores, isAdmin }) {
+// canEdit: false for Viewers, who see the catalogue and can print it but change nothing
+export default function ProductsManager({ initialProducts, units, allStores, isAdmin, canEdit = true, settings }) {
   const router = useRouter()
   const { confirm, toast } = useConfirm()
   const [products, setProducts] = useState(initialProducts)
@@ -232,6 +250,19 @@ export default function ProductsManager({ initialProducts, units, allStores, isA
   const openingValue = products.reduce((s, p) => s + p.openingQty * p.openingRate, 0)
   const stockValue = products.reduce((s, p) => s + balancesOf(p).totalValue, 0)
 
+  // Print / PDF / Excel follow the search box
+  const catalogue = {
+    title: 'Product catalogue',
+    subtitle: [`As at ${fmtDate(new Date())}`, q && `Products matching "${query.trim()}"`].filter(Boolean).join(' · '),
+    meta: [
+      ['Products', fmtNum(visible.length)],
+      ['Opening value', fmtMoney(visible.reduce((s, p) => s + p.openingQty * p.openingRate, 0))],
+      ['Stock value', fmtMoney(visible.reduce((s, p) => s + balancesOf(p).totalValue, 0))],
+    ],
+    sections: withTotals([{ cols: CATALOGUE_COLS, rows: visible, empty: 'No products match the search.' }]),
+  }
+  const exportArgs = { ...catalogue, settings, fileBase: q ? 'product-catalogue-filtered' : 'product-catalogue' }
+
   // StockMoveModal expects a store with items; the opening balance is presented as one
   const issuing = modal?.issue
   const issuingStore = issuing && (() => {
@@ -255,27 +286,41 @@ export default function ProductsManager({ initialProducts, units, allStores, isA
                 <IconRuler2 size={17} /> Manage units
               </Link>
             )}
-            <button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('new')}>
-              <IconPlus size={17} /> New product
-            </button>
+            {canEdit && (
+              <button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('new')}>
+                <IconPlus size={17} /> New product
+              </button>
+            )}
           </>
         )}
       />
 
       <div className={ui.page}>
-        <div className={`${ui.grid} ${ui.cols4}`}>
+        <div className={`${ui.grid} ${ui.cols4}`} data-no-print>
           <StatCard icon={IconPackage} tone="info" label="Products" value={fmtNum(products.length)} hint="In the catalogue" />
           <StatCard icon={IconBuildingBank} tone="brand" label="Opening balances" value={fmtMoney(openingValue)} hint="Qty × rate as entered" />
           <StatCard icon={IconCoins} tone="success" label="Stock value" value={fmtMoney(stockValue)} hint="All stores and opening balances" />
           <StatCard icon={IconRuler2} tone="teal" label="Units" value={fmtNum(units.length)} hint="kg, bag, litre…" />
         </div>
 
-        <section className={`${ui.card} ${ui.cardFlush}`}>
+        {products.length > 0 && (
+          <ExportBar
+            info={<strong className={ui.strong}>{visible.length === products.length ? plural(products.length, 'product') : `${visible.length} of ${products.length} products`}</strong>}
+            onPdf={() => exportPdf(exportArgs)}
+            onExcel={() => exportExcel(exportArgs)}
+          />
+        )}
+
+        <div className={ui.printOnly}>
+          <ReportDocument {...catalogue} settings={settings} />
+        </div>
+
+        <section className={`${ui.card} ${ui.cardFlush}`} data-no-print>
           {products.length === 0 ? (
             <EmptyState
               icon={IconBox}
               title="No products yet"
-              action={<button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('new')}><IconPlus size={17} /> New product</button>}
+              action={canEdit ? <button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('new')}><IconPlus size={17} /> New product</button> : null}
             >
               Products are created once here and then used by every store.
             </EmptyState>
@@ -298,8 +343,8 @@ export default function ProductsManager({ initialProducts, units, allStores, isA
                       <th className={ui.num}>Opening qty</th>
                       <th className={ui.num}>Rate (UGX)</th>
                       <th className={ui.num}>Opening value</th>
-                      <th className={ui.num}>Opening left</th>
-                      <th className={ui.num}>In stores</th>
+                      <th className={ui.num} title="Opening balance not yet issued to a store">Not yet in a store</th>
+                      <th className={ui.num} title="How many stores hold it">In stores</th>
                       <th className={ui.num}>Total qty</th>
                       <th className={ui.num}>Total value</th>
                       <th />
@@ -321,7 +366,7 @@ export default function ProductsManager({ initialProducts, units, allStores, isA
                           <td className={ui.num}>{fmtNum(b.totalValue)}</td>
                           <td>
                             <div className={ui.cellActions}>
-                              {b.left > 0 && (
+                              {canEdit && b.left > 0 && (
                                 <button type="button" className={ui.iconBtn} title="Issue from the opening balance" onClick={() => setModal({ issue: p })}>
                                   <IconArrowBarUp size={17} />
                                 </button>
@@ -329,12 +374,16 @@ export default function ProductsManager({ initialProducts, units, allStores, isA
                               <Link href={`/search?product=${p.id}`} className={ui.iconBtn} title="History">
                                 <IconHistory size={17} />
                               </Link>
-                              <button type="button" className={ui.iconBtn} title="Edit" onClick={() => setModal({ edit: p })}>
-                                <IconEdit size={17} />
-                              </button>
-                              <button type="button" className={`${ui.iconBtn} ${ui.iconBtnDanger}`} title="Delete" onClick={() => deleteProduct(p)}>
-                                <IconTrash size={17} />
-                              </button>
+                              {canEdit && (
+                                <>
+                                  <button type="button" className={ui.iconBtn} title="Edit" onClick={() => setModal({ edit: p })}>
+                                    <IconEdit size={17} />
+                                  </button>
+                                  <button type="button" className={`${ui.iconBtn} ${ui.iconBtnDanger}`} title="Delete" onClick={() => deleteProduct(p)}>
+                                    <IconTrash size={17} />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>

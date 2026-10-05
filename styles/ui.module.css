@@ -1015,7 +1015,11 @@ a.listItem:hover { background: var(--surface-muted); }
 }
 
 /* ── Print ───────────────────────────────────────────────────────────────── */
+/* A printable copy of an interactive table: hidden on screen, printed in its place */
+.printOnly { display: none; }
+
 @media print {
+  .printOnly { display: block; }
   .page { padding: 0; gap: 12px; }
   .doc { padding: 0; border: none; border-radius: 0; box-shadow: none; }
   /* Paper is narrower than the phone breakpoint; keep the company details on the right */

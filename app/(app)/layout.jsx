@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
 import { getSettings } from '@/lib/settings'
+import { countAwaiting } from '@/lib/approvals'
 import AppShell from '@/components/AppShell'
 
 // Shared frame for every signed-in page. Layouts persist across navigation, so the
@@ -11,7 +12,7 @@ export default async function AppLayout({ children }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) redirect('/login')
 
-  const [categories, settings, cookieStore] = await Promise.all([
+  const [categories, settings, cookieStore, awaitingApproval] = await Promise.all([
     prisma.category.findMany({
       where: { isSystem: false },
       select: {
@@ -24,14 +25,16 @@ export default async function AppLayout({ children }) {
     }),
     getSettings(),
     cookies(),
+    currentUser.canApprove ? countAwaiting() : 0,
   ])
 
   return (
     <AppShell
-      user={{ id: currentUser.id, username: currentUser.username, role: currentUser.role }}
+      user={{ id: currentUser.id, username: currentUser.username, role: currentUser.role, canApprove: currentUser.canApprove }}
       categories={categories}
       companyName={settings.companyName}
       initialCollapsed={cookieStore.get('sf_sidebar')?.value === 'collapsed'}
+      awaitingApproval={awaitingApproval}
     >
       {children}
     </AppShell>

@@ -4,25 +4,46 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   IconAlertTriangle, IconArrowBarToDown, IconArrowBarUp, IconArrowsExchange, IconBox, IconCoins, IconEdit,
-  IconHistory, IconPackage, IconRestore, IconSearch, IconStack2, IconTrash,
+  IconArrowBackUp, IconHistory, IconLockOpen2, IconPackage, IconRestore, IconSearch, IconStack2, IconTrash,
 } from '@tabler/icons-react'
 import PageHeader from '@/components/ui/PageHeader'
 import StatCard from '@/components/ui/StatCard'
 import Tabs from '@/components/ui/Tabs'
 import Badge, { MovementBadge } from '@/components/ui/Badge'
 import EmptyState from '@/components/ui/EmptyState'
+import ExportBar from '@/components/ui/ExportBar'
+import ReportDocument from '@/components/ui/ReportDocument'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { api } from '@/lib/api'
+import { canEdit, isAdminRole } from '@/lib/constants'
 import { fmtDate, fmtMoney, fmtNum, fmtSigned, plural, timeAgo } from '@/lib/format'
+import { withTotals } from '@/lib/tables'
+import { exportExcel, exportPdf, fileSafe } from '@/lib/exporters'
 import StockInModal from './StockInModal'
 import StockMoveModal, { TRANSFER_DESTINATIONS, STOCK_OUT_DESTINATIONS } from './StockMoveModal'
 import EditItemModal from './EditItemModal'
+import ReturnModal from './ReturnModal'
+import ReleaseModal from './ReleaseModal'
 import ui from '@/styles/ui.module.css'
 
-// Lines recorded on a received, issue or transfer note (the rest are adjustments)
-const NOTE_TYPES = ['IN', 'TRANSFER_IN', 'TRANSFER_OUT']
+// Lines recorded on a received, issue, transfer or return note (the rest are adjustments)
+const NOTE_TYPES = ['IN', 'TRANSFER_IN', 'TRANSFER_OUT', 'RETURN']
 
-export default function StoreDashboard({ store, items, deletedItems = [], movements, movementTotal, allStores, currentUser }) {
+// The inventory as a stock sheet for print, PDF and Excel (the same columns as on screen)
+const stockSheetCols = items => [
+  { label: 'Item', value: i => i.name, strong: true },
+  ...(items.some(i => i.keptFor) ? [{ label: 'Kept for', value: i => i.keptFor }] : []),
+  { label: 'Owner', value: i => i.owner },
+  { label: 'Unit', value: i => i.unit, muted: true },
+  { label: 'Rate (UGX)', value: i => i.rate, num: true },
+  { label: 'Last added', value: i => i.lastAdded, num: true },
+  { label: 'Deducted', value: i => i.deducted, num: true },
+  { label: 'Balance', value: i => i.quantity, num: true },
+  { label: 'Value (UGX)', value: i => i.value, num: true, total: true },
+  { label: 'Status', value: i => (i.isLow ? 'Low' : 'In stock') },
+]
+
+export default function StoreDashboard({ store, items, deletedItems = [], movements, movementTotal, allStores, currentUser, settings }) {
   const router = useRouter()
   const { confirm, toast } = useConfirm()
   const [tab, setTab] = useState('inventory')
@@ -32,13 +53,32 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
   const [busyId, setBusyId] = useState(null)
 
   const isSuperAdmin = currentUser.role === 'SUPER_ADMIN'
+  const canWork = canEdit(currentUser.role) // Viewers see everything but record nothing
+  const canRelease = isAdminRole(currentUser.role)
   const lowCount = items.filter(i => i.isLow).length
   const totalQty = items.reduce((s, i) => s + i.quantity, 0)
   const totalValue = items.reduce((s, i) => s + i.value, 0)
 
   const q = query.trim().toLowerCase()
   const visibleItems = items.filter(i =>
-    (!lowOnly || i.isLow) && (!q || i.name.toLowerCase().includes(q) || i.owner.toLowerCase().includes(q)))
+    (!lowOnly || i.isLow) && (!q || [i.name, i.owner, i.keptFor ?? ''].some(text => text.toLowerCase().includes(q))))
+
+  // Print / PDF / Excel of the inventory follow the search box and "Low stock only"
+  const stockSheet = {
+    title: `Stock sheet · ${store.name}`,
+    subtitle: [
+      store.category.name,
+      `As at ${fmtDate(new Date())}`,
+      lowOnly && 'Low stock only',
+      q && `Matching "${query.trim()}"`,
+    ].filter(Boolean).join(' · '),
+    meta: [
+      ['Items', fmtNum(visibleItems.length)],
+      ['Stock value', fmtMoney(visibleItems.reduce((s, i) => s + i.value, 0))],
+    ],
+    sections: withTotals([{ cols: stockSheetCols(items), rows: visibleItems, empty: 'No items match the filters.' }]),
+  }
+  const sheetExport = { ...stockSheet, settings, fileBase: `stock-sheet-${fileSafe(store.name)}` }
 
   function done() {
     setModal(null)
@@ -97,7 +137,7 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
           ? <Badge tone="success" dot title="Changes record who made them">Tracking on</Badge>
           : <Badge tone="neutral" dot title="Changes don't record who made them">Tracking off</Badge>}
         subtitle={`${plural(items.length, 'item')} in stock · ${fmtMoney(totalValue)}`}
-        actions={(
+        actions={canWork ? (
           <>
             <button type="button" className={`${ui.btn} ${ui.btnSecondary}`} onClick={() => setModal('in')}>
               <IconArrowBarToDown size={17} /> Stock in
@@ -105,15 +145,18 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
             <button type="button" className={`${ui.btn} ${ui.btnSecondary}`} onClick={() => setModal('transfer')} title="Move stock to another store">
               <IconArrowsExchange size={17} /> Transfer
             </button>
+            <button type="button" className={`${ui.btn} ${ui.btnSecondary}`} onClick={() => setModal('return')} title="Stock coming back from a project site">
+              <IconArrowBackUp size={17} /> Return
+            </button>
             <button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('out')} title="Issue stock for use: a project (field) or an external party">
               <IconArrowBarUp size={17} /> Stock out
             </button>
           </>
-        )}
+        ) : null}
       />
 
       <div className={ui.page}>
-        <div className={`${ui.grid} ${ui.cols4}`}>
+        <div className={`${ui.grid} ${ui.cols4}`} data-no-print>
           <StatCard icon={IconPackage} tone="info" label="Items" value={fmtNum(items.length)} hint="Products × owners in stock" />
           <StatCard icon={IconStack2} tone="teal" label="Total quantity" value={fmtNum(totalQty)} hint="All units combined" />
           <StatCard icon={IconCoins} tone="brand" label="Stock value" value={fmtMoney(totalValue)} hint="At current rates" />
@@ -129,13 +172,26 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
 
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
+        {tab === 'inventory' && items.length > 0 && (
+          <>
+            <ExportBar
+              info={<strong className={ui.strong}>{visibleItems.length === items.length ? plural(items.length, 'item') : `${visibleItems.length} of ${items.length} items`}</strong>}
+              onPdf={() => exportPdf(sheetExport)}
+              onExcel={() => exportExcel(sheetExport)}
+            />
+            <div className={ui.printOnly}>
+              <ReportDocument {...stockSheet} settings={settings} />
+            </div>
+          </>
+        )}
+
         {tab === 'inventory' && (
-          <section className={`${ui.card} ${ui.cardFlush}`}>
+          <section className={`${ui.card} ${ui.cardFlush}`} data-no-print>
             {items.length === 0 ? (
               <EmptyState
                 icon={IconBox}
                 title="No stock in this store yet"
-                action={<button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('in')}><IconArrowBarToDown size={17} /> Stock in</button>}
+                action={canWork ? <button type="button" className={`${ui.btn} ${ui.btnPrimary}`} onClick={() => setModal('in')}><IconArrowBarToDown size={17} /> Stock in</button> : null}
               >
                 Use Stock in to receive the first items into {store.name}.
               </EmptyState>
@@ -180,6 +236,7 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
                         <tr key={item.id}>
                           <td>
                             <Link href={`/search?product=${item.productId}`} className={ui.cellLink} title="View this product's history">{item.name}</Link>
+                            {item.keptFor && <span className={ui.cellSub}><Badge tone="info" title="Received for this project; it can only be issued to it">For {item.keptFor}</Badge></span>}
                           </td>
                           <td className={item.owner === '—' ? ui.cellMuted : undefined}>{item.owner}</td>
                           <td className={ui.cellMuted}>{item.unit}</td>
@@ -196,9 +253,16 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
                           <td className={`${ui.cellMuted} ${ui.nowrap}`} suppressHydrationWarning>{timeAgo(item.updatedAt)}</td>
                           <td>
                             <div className={ui.cellActions}>
-                              <button type="button" className={ui.iconBtn} title="Edit rate, quantity or alert" onClick={() => setModal({ edit: item })}>
-                                <IconEdit size={17} />
-                              </button>
+                              {canWork && (
+                                <button type="button" className={ui.iconBtn} title="Edit rate, quantity or alert" onClick={() => setModal({ edit: item })}>
+                                  <IconEdit size={17} />
+                                </button>
+                              )}
+                              {canRelease && item.keptFor && item.quantity > 0 && (
+                                <button type="button" className={ui.iconBtn} title={`Release what is left for ${item.keptFor} to general stock`} onClick={() => setModal({ release: item })}>
+                                  <IconLockOpen2 size={17} />
+                                </button>
+                              )}
                               {isSuperAdmin && (
                                 <button type="button" className={`${ui.iconBtn} ${ui.iconBtnDanger}`} title="Remove from store" onClick={() => removeItem(item)} disabled={busyId === item.id}>
                                   <IconTrash size={17} />
@@ -249,7 +313,7 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
                           <td><MovementBadge kind={m.kind} /></td>
                           <td>
                             <Link href={`/search?product=${m.productId}`} className={ui.cellLink}>{m.product}</Link>
-                            <span className={ui.cellSub}>{m.unit}</span>
+                            <span className={ui.cellSub}>{m.unit}{m.keptFor ? ` · kept for ${m.keptFor}` : ''}</span>
                           </td>
                           <td className={m.owner === '—' ? ui.cellMuted : undefined}>{m.owner}</td>
                           <td className={`${ui.num} ${ui.strong}`}>{m.change ? fmtSigned(m.change) : '—'}</td>
@@ -300,7 +364,7 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
                   <tbody>
                     {deletedItems.map(entry => (
                       <tr key={entry.id}>
-                        <td className={ui.cellStrong}>{entry.name}<span className={ui.cellSub}>{entry.unit}</span></td>
+                        <td className={ui.cellStrong}>{entry.name}<span className={ui.cellSub}>{entry.unit}{entry.keptFor ? ` · kept for ${entry.keptFor}` : ''}</span></td>
                         <td className={entry.owner === '—' ? ui.cellMuted : undefined}>{entry.owner}</td>
                         <td className={ui.num}>{fmtNum(entry.quantity)}</td>
                         <td className={ui.cellMuted} suppressHydrationWarning>{timeAgo(entry.deletedAt)}</td>
@@ -346,6 +410,8 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
         />
       )}
       {modal?.edit && <EditItemModal item={modal.edit} onClose={() => setModal(null)} onDone={done} />}
+      {modal === 'return' && <ReturnModal store={{ ...store, items }} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.release && <ReleaseModal item={modal.release} onClose={() => setModal(null)} onDone={done} />}
     </>
   )
 }

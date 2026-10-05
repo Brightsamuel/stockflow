@@ -45,7 +45,9 @@ export async function GET(req) {
       // IN = goods received; OUT to a project/external party = issue; OUT to a store = transfer
       const kind = lines.some(l => l.type === "IN")
         ? "Receipt"
-        : lines.some(l => l.type === "TRANSFER_OUT" && (l.projectId || l.recipientId))
+        : lines.some(l => l.type === "RETURN")
+          ? "Return"
+          : lines.some(l => l.type === "TRANSFER_OUT" && (l.projectId || l.recipientId))
           ? "Issue"
           : "Transfer"
       // A transfer writes an OUT and an IN line per item; count items once

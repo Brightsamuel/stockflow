@@ -2,6 +2,7 @@ import { cache } from 'react'
 import { notFound, redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
+import { getSettings } from '@/lib/settings'
 import { ownerLabel } from '@/lib/owners'
 import { LIVE, movementKind, signedChange } from '@/lib/movements'
 import StoreDashboard from '@/dashboard/StoreDashboard'
@@ -14,7 +15,11 @@ const getStore = cache(id => prisma.store.findUnique({
     category: { select: { id: true, name: true, isSystem: true, trackLogs: true } },
     entries: {
       where: { isDeleted: false },
-      include: { product: { include: { unit: true } }, owner: { select: { id: true, name: true } } },
+      include: {
+        product: { include: { unit: true } },
+        owner: { select: { id: true, name: true } },
+        forProject: { select: { id: true, name: true } },
+      },
       orderBy: [{ product: { name: 'asc' } }, { owner: { name: 'asc' } }],
     },
   },
@@ -36,7 +41,8 @@ export default async function StorePage({ params }) {
   if (!store || store.category.isSystem) notFound()
 
   const isSuperAdmin = currentUser.role === 'SUPER_ADMIN'
-  const [otherStores, totals, logs, movementTotal, deleted] = await Promise.all([
+  const [settings, otherStores, totals, logs, movementTotal, deleted] = await Promise.all([
+    getSettings(),
     // Transfer destinations: every other visible store
     prisma.store.findMany({
       where: { id: { not: id }, category: { isSystem: false } },
@@ -45,9 +51,9 @@ export default async function StorePage({ params }) {
     }),
     // Stock moved per row, newest first, for "Last added" and "Deducted"
     prisma.stockLog.findMany({
-      where: { storeId: id, type: { in: ['IN', 'TRANSFER_IN', 'TRANSFER_OUT'] }, ...LIVE },
+      where: { storeId: id, type: { in: ['IN', 'TRANSFER_IN', 'TRANSFER_OUT', 'RETURN'] }, ...LIVE },
       orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
-      select: { productId: true, ownerId: true, type: true, quantity: true },
+      select: { productId: true, ownerId: true, forProjectId: true, type: true, quantity: true },
     }),
     prisma.stockLog.findMany({
       where: { storeId: id, ...LIVE },
@@ -55,6 +61,7 @@ export default async function StorePage({ params }) {
         product: { include: { unit: true } },
         owner: { select: { id: true, name: true } },
         user: { select: { username: true } },
+        forProject: { select: { name: true } },
       },
       orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
       take: MOVEMENT_LIMIT,
@@ -63,7 +70,7 @@ export default async function StorePage({ params }) {
     isSuperAdmin
       ? prisma.stockEntry.findMany({
           where: { storeId: id, isDeleted: true },
-          include: { product: { include: { unit: true } }, owner: { select: { id: true, name: true } } },
+          include: { product: { include: { unit: true } }, owner: { select: { id: true, name: true } }, forProject: { select: { name: true } } },
           orderBy: { deletedAt: 'desc' },
         })
       : [],
@@ -71,15 +78,17 @@ export default async function StorePage({ params }) {
 
   const lastAdded = {}
   const deducted = {}
+  // A row: product, owner and the project its stock is kept for (empty = general stock)
+  const rowKey = r => `${r.productId}:${r.ownerId}:${r.forProjectId ?? ''}`
   totals.forEach(l => {
-    const key = `${l.productId}:${l.ownerId}`
+    const key = rowKey(l)
     // Logs are newest first, so the first addition seen is the latest
-    if ((l.type === 'IN' || l.type === 'TRANSFER_IN') && !(key in lastAdded)) lastAdded[key] = l.quantity
+    if (l.type !== 'TRANSFER_OUT' && !(key in lastAdded)) lastAdded[key] = l.quantity
     if (l.type === 'TRANSFER_OUT') deducted[key] = (deducted[key] ?? 0) + l.quantity
   })
 
   const items = store.entries.map(entry => {
-    const key = `${entry.productId}:${entry.ownerId}`
+    const key = rowKey(entry)
     return {
       id: entry.id,
       productId: entry.productId,
@@ -87,6 +96,8 @@ export default async function StorePage({ params }) {
       unit: entry.product.unit.name,
       ownerId: entry.ownerId,
       owner: ownerLabel(entry.owner),
+      forProjectId: entry.forProjectId,
+      keptFor: entry.forProject?.name ?? null,
       rate: entry.rate,
       quantity: entry.quantity,
       lowStockAt: entry.lowStockAt,
@@ -107,6 +118,7 @@ export default async function StorePage({ params }) {
     product: l.product.name,
     unit: l.product.unit.name,
     owner: ownerLabel(l.owner),
+    keptFor: l.forProject?.name ?? null,
     change: signedChange(l),
     note: l.note,
     refNo: l.refNo,
@@ -119,6 +131,7 @@ export default async function StorePage({ params }) {
     name: entry.product.name,
     unit: entry.product.unit.name,
     owner: ownerLabel(entry.owner),
+    keptFor: entry.forProject?.name ?? null,
     quantity: entry.quantity,
     deletedAt: entry.deletedAt,
   }))
@@ -132,6 +145,7 @@ export default async function StorePage({ params }) {
       movementTotal={movementTotal}
       allStores={otherStores.map(s => ({ id: s.id, name: s.name, categoryName: s.category.name }))}
       currentUser={{ id: currentUser.id, username: currentUser.username, role: currentUser.role }}
+      settings={settings}
     />
   )
 }

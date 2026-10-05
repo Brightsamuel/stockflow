@@ -7,7 +7,7 @@ import Field from '@/components/ui/Field'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { api } from '@/lib/api'
 import { fmtMoney, fmtNum, plural, todayInput } from '@/lib/format'
-import { useList, useRefExists, useScrollOnAdd, nextLineKey } from './hooks'
+import { postMovement, useList, useRefExists, useScrollOnAdd, nextLineKey } from './hooks'
 import ui from '@/styles/ui.module.css'
 
 // Transfer moves stock to another store; Stock out takes it out of the inventory as used
@@ -32,13 +32,21 @@ function blankLine(entryId = '') {
 
 function itemLabel(item) {
   const owner = item.owner && item.owner !== '—' ? ` · ${item.owner}` : ''
-  return `${item.name}${owner} — ${fmtNum(item.quantity)} ${item.unit} available`
+  const kept = item.keptFor ? ` · for ${item.keptFor}` : ''
+  return `${item.name}${owner}${kept} — ${fmtNum(item.quantity)} ${item.unit} available`
+}
+
+// Stock kept for a project goes only to that project, or to another store (still kept for it)
+function canSend(item, destType, projectId) {
+  if (!item?.forProjectId) return true
+  if (destType === 'store') return true
+  return destType === 'project' && item.forProjectId === projectId
 }
 
 // store: { id, name, items: [{ id, name, unit, owner, rate, quantity }] }
 export default function StockMoveModal({ title, destinations, store, allStores, onClose, onDone, initialItemId = '', allowNext = true }) {
   const router = useRouter()
-  const { toast } = useConfirm()
+  const { confirm, toast } = useConfirm()
   const today = todayInput()
   const [destType, setDestType] = useState(destinations[0])
   const [targetStoreId, setTargetStoreId] = useState('')
@@ -47,6 +55,9 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
   const [recipientId, setRecipientId] = useState('')
   const [newRecipient, setNewRecipient] = useState({ name: '', company: '' })
   const [takenBy, setTakenBy] = useState('')
+  const [issuedBy, setIssuedBy] = useState('')
+  const [receivedBy, setReceivedBy] = useState('')
+  const [people] = useList('/api/people')
   const [refNo, setRefNo] = useState('')
   const [entryDate, setEntryDate] = useState(today)
   const [lines, setLines] = useState(() => [blankLine(initialItemId)])
@@ -65,6 +76,7 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
   const refExists = useRefExists(refNo)
   const bodyRef = useScrollOnAdd(lines.length)
   const itemsById = Object.fromEntries(store.items.map(i => [i.id, i]))
+  const choices = store.items.filter(i => canSend(i, destType, projectId))
   const filled = lines.filter(l => l.entryId || l.quantity !== '')
   const total = lines.reduce((s, l) => s + (itemsById[l.entryId]?.rate ?? 0) * (parseFloat(l.quantity) || 0), 0)
 
@@ -80,6 +92,11 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
     if (filled.length === 0) return 'Add at least one item.'
     const bad = filled.find(l => !l.entryId || !(parseFloat(l.quantity) > 0))
     if (bad) return `Line ${lines.indexOf(bad) + 1}: choose an item and enter a quantity above 0.`
+    const kept = filled.find(l => !canSend(itemsById[l.entryId], destType, projectId))
+    if (kept) {
+      const item = itemsById[kept.entryId]
+      return `Line ${lines.indexOf(kept) + 1}: this ${item.name} is kept for ${item.keptFor}, so it can only go to that project or another store.`
+    }
 
     // The same row can appear on several lines; together they can't exceed what's available
     const wanted = {}
@@ -110,6 +127,8 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
         refNo: refNo.trim() || null,
         entryDate,
         takenBy: needsTaker ? takenBy.trim() : null,
+        issuedBy: issuedBy.trim() || null,
+        receivedBy: needsTaker ? null : receivedBy.trim() || null,
         items: filled.map(l => ({ entryId: l.entryId, quantity: parseFloat(l.quantity) })),
       }
 
@@ -135,7 +154,8 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
         }
       }
 
-      const data = await api('/api/transfers', { method: 'POST', body })
+      const data = await postMovement('/api/transfers', body, confirm)
+      if (!data) return
       const verb = destType === 'store' ? 'transferred' : destType === 'project' ? 'issued to the project' : 'issued'
       const summary = `${plural(data.count, 'item')} ${verb}${data.refNo ? ` under ${data.refNo}` : ''}.`
       const noteLabel = destType === 'store' ? 'Print transfer note' : 'Print issue note'
@@ -265,6 +285,20 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
         )}
       </div>
 
+      <div className={ui.formRow2}>
+        <Field label={destType === 'store' ? 'Dispatched by' : 'Issued by'} hint="Optional. Printed on the note; leave empty to write it by hand.">
+          <input className={ui.input} list="stock-move-people" value={issuedBy} onChange={e => setIssuedBy(e.target.value)} placeholder="Storekeeper's name" autoComplete="off" />
+        </Field>
+        {!needsTaker && (
+          <Field label="Received by" hint={destType === 'store' ? 'Optional. Who receives it at the destination store.' : 'Optional. Who receives it for the external party.'}>
+            <input className={ui.input} list="stock-move-people" value={receivedBy} onChange={e => setReceivedBy(e.target.value)} placeholder="Full name" autoComplete="off" />
+          </Field>
+        )}
+        <datalist id="stock-move-people">
+          {people.map(name => <option key={name} value={name} />)}
+        </datalist>
+      </div>
+
       {refExists ? (
         <div className={`${ui.alert} ${ui.alertInfo}`}>
           <IconInfoCircle size={17} />
@@ -306,8 +340,9 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
                           onChange={e => setLine(l.key, 'entryId', e.target.value)}
                           aria-label={`Line ${i + 1} item`}
                         >
-                          <option value="">{store.items.length ? 'Choose an item…' : 'No stock in this store'}</option>
-                          {store.items.map(it => <option key={it.id} value={it.id}>{itemLabel(it)}</option>)}
+                          <option value="">{choices.length ? 'Choose an item…' : 'No stock in this store can go there'}</option>
+                          {choices.map(it => <option key={it.id} value={it.id}>{itemLabel(it)}</option>)}
+                          {item && !choices.includes(item) && <option value={item.id}>{itemLabel(item)} (not allowed there)</option>}
                         </select>
                       </td>
                       <td style={{ minWidth: 100 }}>

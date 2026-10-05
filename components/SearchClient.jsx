@@ -16,19 +16,20 @@ import { exportExcel, exportPdf, fileSafe } from '@/lib/exporters'
 import ui from '@/styles/ui.module.css'
 
 // Movements recorded on a received, issue or transfer note (the others are adjustments)
-const NOTE_KINDS = ['IN', 'TRANSFER_IN', 'TRANSFER_OUT', 'USED', 'ISSUED']
+const NOTE_KINDS = ['IN', 'TRANSFER_IN', 'TRANSFER_OUT', 'USED', 'ISSUED', 'RETURNED', 'OPENING_STOCK']
 
 function noteHref(row) {
   if (row.refNo) return `/notes?ref=${encodeURIComponent(row.refNo)}`
   return NOTE_KINDS.includes(row.kind) ? `/notes?log=${row.id}` : null
 }
 
-function balanceCols(ranged) {
+// showOpening: for a period, or when there is opening stock (on hand from the start)
+function balanceCols(ranged, showOpening) {
   return [
     { label: 'Store', value: r => r.store, strong: true },
     { label: 'Category', value: r => r.category, muted: true },
     { label: 'Owner', value: r => r.owner },
-    ...(ranged ? [{ label: 'Opening', value: r => r.opening, num: true, total: true }] : []),
+    ...(showOpening ? [{ label: 'Opening', value: r => r.opening, num: true, total: true }] : []),
     { label: 'Added', value: r => r.added, num: true, total: true },
     { label: 'Deducted', value: r => r.deducted, num: true, total: true },
     { label: 'Adjusted', value: r => r.adjusted, num: true, total: true, format: fmtSigned },
@@ -74,6 +75,7 @@ function summaryItems(history, filters) {
     ['Received', fmtSigned(s.received)],
     ['Used on projects', fmtSigned(-s.used)],
     ['Issued externally', fmtSigned(-s.issued)],
+    ...(s.returned ? [['Returned from projects', fmtSigned(s.returned)]] : []),
     ...(s.transferred ? [['Moved between stores', fmtNum(s.transferred)]] : []),
     ['Adjustments', fmtSigned(s.adjusted)],
     [ranged ? `Closing, ${filters.to ? fmtDate(filters.to) : 'today'}` : 'Balance now', qty(s.closing)],
@@ -190,7 +192,7 @@ export default function SearchClient({ owners = [], settings, initialHistory = n
   const summary = history ? summaryItems(history, shown) : []
   const movements = history ? (order === 'newest' ? [...history.rows].reverse() : history.rows) : []
   const sections = history ? withTotals([
-    { title: ranged ? 'Balances for the period' : 'Balances', sheet: 'Balances', cols: balanceCols(ranged), rows: history.balances, empty: 'No stock and no movements in this period.' },
+    { title: ranged ? 'Balances for the period' : 'Balances', sheet: 'Balances', cols: balanceCols(ranged, ranged || history.balances.some(b => b.opening)), rows: history.balances, empty: 'No stock and no movements in this period.' },
     { title: 'Movements', sheet: 'Movements', cols: MOVEMENT_COLS, rows: movements, empty: ranged ? 'No movements in this period.' : 'No movements recorded yet.', totals: false },
   ]) : []
   const exportArgs = history && {

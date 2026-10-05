@@ -6,23 +6,35 @@ import { fmtDate, plural } from '@/lib/format'
 import Badge from '@/components/ui/Badge'
 import ui from '@/styles/ui.module.css'
 
-const KIND_TONE = { Receipt: 'success', Issue: 'warning', Transfer: 'info' }
+const KIND_TONE = { Receipt: 'success', Issue: 'warning', Transfer: 'info', Return: 'teal' }
 
-// Ref no. box with suggestions as you type; an empty box lists the most recent ref nos
+// Ref no. box with suggestions as you type; an empty box lists the most recent ref nos.
+// The list shown is always the answer to the latest request for exactly what is typed, made
+// when the box was last opened, so a ref no. deleted since an earlier search never reappears.
 export default function RefSearch({ value, onChange, onPick, autoFocus = false, placeholder = 'Type to search, e.g. RCT-0091' }) {
   const [open, setOpen] = useState(false)
-  const [results, setResults] = useState([])
+  const [opened, setOpened] = useState(0) // bumped each time the box opens, to fetch afresh
+  const [found, setFound] = useState({ query: null, opened: -1, items: [] })
+  const q = value.trim()
 
   useEffect(() => {
     if (!open) return undefined
-    const q = value.trim()
+    const controller = new AbortController()
     const timer = setTimeout(() => {
-      api(`/api/receipts${q ? `?q=${encodeURIComponent(q)}` : ''}`)
-        .then(data => setResults(Array.isArray(data) ? data : []))
-        .catch(() => setResults([]))
+      api(`/api/receipts${q ? `?q=${encodeURIComponent(q)}` : ''}`, { signal: controller.signal })
+        .then(data => setFound({ query: q, opened, items: Array.isArray(data) ? data : [] }))
+        .catch(e => { if (e.name !== 'AbortError') setFound({ query: q, opened, items: [] }) })
     }, 220)
-    return () => clearTimeout(timer)
-  }, [value, open])
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [q, open, opened])
+
+  const current = found.query === q && found.opened === opened
+  const results = current ? found.items : []
+
+  function show() {
+    if (!open) setOpened(n => n + 1)
+    setOpen(true)
+  }
 
   function pick(refNo) {
     setOpen(false)
@@ -36,17 +48,20 @@ export default function RefSearch({ value, onChange, onPick, autoFocus = false, 
         className={`${ui.input} ${ui.inputWithIcon}`}
         value={value}
         autoFocus={autoFocus}
+        autoComplete="off"
         placeholder={placeholder}
-        onChange={e => { onChange(e.target.value); setOpen(true) }}
-        onFocus={() => setOpen(true)}
+        onChange={e => { onChange(e.target.value); show() }}
+        onFocus={show}
         onBlur={() => setOpen(false)}
         onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
       />
       {open && (
         <div className={ui.suggest}>
-          {results.length === 0 ? (
+          {!current ? (
+            <div className={ui.suggestEmpty}><span className={ui.spinner} /> Searching…</div>
+          ) : results.length === 0 ? (
             <div className={ui.suggestEmpty}>
-              {value.trim() ? `No ref nos. matching "${value.trim()}".` : 'No ref nos. recorded yet.'}
+              {q ? `No ref nos. matching "${q}".` : 'No ref nos. recorded yet.'}
             </div>
           ) : results.map(r => (
             <button

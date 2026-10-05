@@ -1,6 +1,6 @@
 import {
   IconClipboardList, IconFileText, IconHistory, IconLayoutDashboard, IconListDetails, IconPackage,
-  IconReportAnalytics, IconSettings, IconUserCircle, IconUsers,
+  IconReportAnalytics, IconRosetteDiscountCheck, IconSettings, IconUserCircle, IconUsers,
 } from '@tabler/icons-react'
 
 // Pages in the sidebar and Quick find
@@ -12,6 +12,9 @@ export const MAIN_NAV = [
   { href: '/reports', label: 'Reports', icon: IconReportAnalytics, keywords: 'balance ledger low stock external ref' },
   { href: '/notes', label: 'Documents', icon: IconFileText, keywords: 'notes grn issue transfer print ref' },
 ]
+
+// Shown to users with the Approver permission
+export const APPROVALS_NAV = { href: '/approvals', label: 'Approvals', icon: IconRosetteDiscountCheck, keywords: 'approve sign off stock out issue' }
 
 export const ADMIN_NAV = [
   { href: '/users', label: 'Users', icon: IconUsers, keywords: 'accounts passwords roles' },

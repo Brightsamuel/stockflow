@@ -69,13 +69,17 @@ model StockEntry {
   isDeleted  Boolean   @default(false)
   deletedAt  DateTime?
   ownerId    String     @default("unassigned") // each owner's stock of a product is its own row
+  forProjectId String?  // stock received for a project is kept for it, on its own row; null = general stock
   product    Product    @relation(fields: [productId], references: [id])
   store      Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   owner      StockOwner @relation(fields: [ownerId], references: [id])
+  forProject Project?   @relation("KeptFor", fields: [forProjectId], references: [id], onDelete: Restrict)
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
-  @@unique([productId, storeId, ownerId])
+  // One general row and one row per project; the migration makes NULL (general) count as a
+  // value here (NULLS NOT DISTINCT), so there is only ever one general row
+  @@unique([productId, storeId, ownerId, forProjectId])
 }
 
 // Every movement is written here — immutable audit trail
@@ -96,16 +100,41 @@ model StockLog {
   takenBy     String?    // who collected the stock on a stock out
   adjustment  Float?     // signed change to the store balance made by an EDIT, DELETE or RESTORE
   deletionId  String?    // set while the note this line belongs to is deleted; such lines no longer count
+  handedOverBy String?   // typed when recording: delivered by (stock in), issued / dispatched by (stock out, transfer)
+  receivedBy  String?    // typed when recording: received by
+  approvalId  String?    // a stock out's sign-off by an approver (see Approval)
+  openingStock Boolean   @default(false) // an opening balance issued to a store: stock on hand from the start
+  forProjectId String?   // the stock row it touched is kept for this project (null = general stock)
   store       Store      @relation(fields: [storeId], references: [id])
   product     Product    @relation(fields: [productId], references: [id])
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
   recipient   Recipient? @relation(fields: [recipientId], references: [id])
   owner       StockOwner @relation(fields: [ownerId], references: [id])
-  project     Project?   @relation(fields: [projectId], references: [id])
+  project     Project?   @relation("IssuedTo", fields: [projectId], references: [id])
+  forProject  Project?   @relation("LogKeptFor", fields: [forProjectId], references: [id], onDelete: Restrict)
   deletion    Deletion?  @relation(fields: [deletionId], references: [id], onDelete: Restrict)
+  approval    Approval?  @relation(fields: [approvalId], references: [id], onDelete: Restrict)
   createdAt   DateTime   @default(now())
 
   @@index([deletionId])
+  @@index([approvalId])
+}
+
+// An approver's sign-off of an issue note (stock out to a project or an external party), given
+// after the stock has left. QUERIED holds the note back with a comment; approving it later points
+// the lines at a new APPROVED record. Records are never removed.
+model Approval {
+  id        String     @id @default(cuid())
+  status    String     // APPROVED | QUERIED
+  comment   String?
+  kind      String     // FIELD | EXTERNAL (see lib/notes)
+  refNo     String?
+  title     String     // e.g. "Material Issue Note"
+  summary   String     // e.g. "Main Store → Bun-3"
+  userId    String?
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  logs      StockLog[]
+  createdAt DateTime   @default(now())
 }
 
 model Transfer {
@@ -166,7 +195,8 @@ model User {
   id           String   @id @default(cuid())
   username     String   @unique
   passwordHash String
-  role         String     @default("STANDARD") // "STANDARD" | "ADMIN" | "SUPER_ADMIN"
+  role         String     @default("STANDARD") // "VIEWER" | "STANDARD" | "ADMIN" | "SUPER_ADMIN"
+  canApprove   Boolean    @default(false)      // may approve stock outs (any role can be given it)
   isActive     Boolean    @default(true)
   sessionVersion Int      @default(0) // bumped on a password change, reset or deactivation to end old sessions
   failedLogins Int        @default(0)
@@ -176,6 +206,7 @@ model User {
   transfers    Transfer[]
   deletions    Deletion[] @relation("DeletedBy")
   restorations Deletion[] @relation("RestoredBy")
+  approvals    Approval[]
 }
 
 model Recipient {
@@ -203,7 +234,9 @@ model Project {
   name      String     @unique
   location  String?
   createdAt DateTime   @default(now())
-  logs      StockLog[]
+  logs      StockLog[] @relation("IssuedTo")      // stock issued to it (and returned from it)
+  keptLogs  StockLog[] @relation("LogKeptFor")    // movements of stock kept for it
+  keptStock StockEntry[] @relation("KeptFor")     // stock rows kept for it
   transfers Transfer[]
 }
 

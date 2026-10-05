@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma"
-import { requireUser } from "@/lib/auth"
+import { requireEditor, requireUser } from "@/lib/auth"
 import { json, fail, handleError } from "@/lib/http"
 
 export async function GET() {
@@ -14,7 +14,7 @@ export async function GET() {
 // Any signed-in user can add a unit while creating a product
 export async function POST(req) {
   try {
-    await requireUser()
+    await requireEditor()
     const { name } = await req.json()
     if (!name?.trim()) return fail("Enter a unit name")
     const unit = await prisma.unit.create({ data: { name: name.trim().toLowerCase() } })

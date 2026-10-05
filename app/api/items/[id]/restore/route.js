@@ -21,6 +21,7 @@ export async function POST(req, { params }) {
           storeId: existing.storeId,
           productId: existing.productId,
           ownerId: existing.ownerId,
+          forProjectId: existing.forProjectId,
           type: "RESTORE",
           quantity: restored.quantity,
           rate: restored.rate,

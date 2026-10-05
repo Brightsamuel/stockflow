@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma"
-import { requireUser } from "@/lib/auth"
+import { requireEditor, requireUser } from "@/lib/auth"
 import { json, fail, handleError } from "@/lib/http"
 import { NO_OWNER } from "@/lib/owners"
 
@@ -16,7 +16,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    await requireUser()
+    await requireEditor()
     const { name } = await req.json()
     if (!name?.trim()) return fail("Enter the owner's name")
     return json(await prisma.stockOwner.create({ data: { name: name.trim() } }), 201)

@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma"
-import { requireUser } from "@/lib/auth"
+import { requireEditor } from "@/lib/auth"
 import { json, fail, handleError, httpError } from "@/lib/http"
 import { isAdminRole } from "@/lib/constants"
 import { productHistory } from "@/lib/guards"
@@ -9,7 +9,7 @@ import { PRODUCT_WITH_BALANCES, parseAmount, setOpeningBalance } from "@/lib/ope
 export async function DELETE(req, { params }) {
   const { id } = await params
   try {
-    await requireUser()
+    await requireEditor()
     const product = await prisma.product.findUnique({
       where: { id },
       include: {
@@ -44,7 +44,7 @@ export async function DELETE(req, { params }) {
 export async function PATCH(req, { params }) {
   const { id } = await params
   try {
-    const user = await requireUser()
+    const user = await requireEditor()
     const body = await req.json()
     const openingQty = parseAmount(body.openingQty, "Opening qty")
     const openingRate = parseAmount(body.openingRate, "Rate")

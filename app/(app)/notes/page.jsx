@@ -46,6 +46,7 @@ export default async function NotesPage({ searchParams }) {
       canDelete={isSuperAdmin}
       deletions={deletions}
       initialTab={tab}
+      currentUser={{ id: user.id, canApprove: user.canApprove }}
     />
   )
 }

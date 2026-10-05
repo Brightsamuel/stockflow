@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma"
-import { requireUser } from "@/lib/auth"
+import { requireEditor, requireUser } from "@/lib/auth"
 import { json, fail, handleError } from "@/lib/http"
 
 // Projects (field sites) that stock can be issued to
@@ -14,7 +14,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    await requireUser()
+    await requireEditor()
     const { name, location } = await req.json()
     if (!name?.trim()) return fail("Enter the project name")
     const project = await prisma.project.create({ data: { name: name.trim(), location: location?.trim() || null } })

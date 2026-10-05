@@ -18,18 +18,20 @@ export async function PATCH(req, { params }) {
   }
 }
 
-// Only a project with no field records can be deleted
+// Only a project with no field records and no stock kept for it can be deleted
 export async function DELETE(req, { params }) {
   const { id } = await params
   try {
     await requireAdmin()
     const project = await prisma.project.findUnique({
       where: { id },
-      include: { _count: { select: { logs: true, transfers: true } } },
+      include: { _count: { select: { logs: true, transfers: true, keptLogs: true, keptStock: true } } },
     })
     if (!project) return fail("Project not found", 404)
     if (project._count.logs + project._count.transfers > 0)
       return fail("Stock has been issued to this project, so it can't be deleted", 409)
+    if (project._count.keptLogs + project._count.keptStock > 0)
+      return fail("Stock has been received for this project, so it can't be deleted", 409)
     await prisma.project.delete({ where: { id } })
     return json({ success: true })
   } catch (e) {

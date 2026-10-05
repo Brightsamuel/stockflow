@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma"
-import { requireUser } from "@/lib/auth"
+import { requireEditor, requireUser } from "@/lib/auth"
 import { json, fail, handleError } from "@/lib/http"
 
 // External parties that stock can be issued to
@@ -14,7 +14,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    await requireUser()
+    await requireEditor()
     const { name, company } = await req.json()
     if (!name?.trim()) return fail("Enter the recipient's name")
     const recipient = await prisma.recipient.create({ data: { name: name.trim(), company: company?.trim() || null } })

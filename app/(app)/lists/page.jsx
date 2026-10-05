@@ -26,7 +26,10 @@ export default async function ListsPage({ searchParams }) {
       include: { _count: { select: { entries: true, logs: true, transfers: true } } },
       orderBy: { name: 'asc' },
     }),
-    prisma.project.findMany({ include: { _count: { select: { logs: true, transfers: true } } }, orderBy: { name: 'asc' } }),
+    prisma.project.findMany({
+      include: { _count: { select: { logs: true, transfers: true, keptLogs: true, keptStock: true } } },
+      orderBy: { name: 'asc' },
+    }),
     prisma.recipient.findMany({ include: { _count: { select: { logs: true, transfers: true } } }, orderBy: { name: 'asc' } }),
   ])
 
@@ -42,7 +45,8 @@ export default async function ListsPage({ searchParams }) {
     })),
     projects: projects.map(p => ({
       id: p.id, name: p.name, extra: p.location, createdAt: p.createdAt,
-      usage: p._count.logs + p._count.transfers, usageLabel: usage([[p._count.logs, 'issue']]),
+      usage: p._count.logs + p._count.transfers + p._count.keptLogs + p._count.keptStock,
+      usageLabel: usage([[p._count.logs, 'issue'], [p._count.keptStock, 'stock row kept for it']]),
     })),
     recipients: recipients.map(r => ({
       id: r.id, name: r.name, extra: r.company, createdAt: r.createdAt,

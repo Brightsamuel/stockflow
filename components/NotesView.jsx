@@ -12,6 +12,7 @@ import ReportDocument from '@/components/ui/ReportDocument'
 import EmptyState from '@/components/ui/EmptyState'
 import RefSearch from '@/components/RefSearch'
 import DeleteNoteModal from '@/components/DeleteNoteModal'
+import ApprovalActions, { ApprovalBadge } from '@/components/ApprovalActions'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { api } from '@/lib/api'
 import { fmtDate, fmtDateTime, fmtNum, plural } from '@/lib/format'
@@ -46,7 +47,7 @@ function noteName(note) {
 
 // refNo or logId: which notes are open (logId: a stock in or stock out saved without a ref no.).
 // canDelete: Super admins can delete a note and restore deleted ones (the Deleted tab).
-export default function NotesView({ refNo, logId, notes, settings, canDelete = false, deletions = [], initialTab = 'notes' }) {
+export default function NotesView({ refNo, logId, notes, settings, canDelete = false, deletions = [], initialTab = 'notes', currentUser = null }) {
   const router = useRouter()
   const { confirm, toast } = useConfirm()
   const [query, setQuery] = useState(refNo)
@@ -95,6 +96,35 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
     } finally {
       setBusyId(null)
     }
+  }
+
+  // Above each note on screen: its approval (issue notes), Approve / Query for approvers and
+  // Delete note for Super admins
+  function noteActions(note) {
+    const deletable = canDelete && note.deletable
+    if (!deletable && !note.approval?.needed) return null
+    return (
+      <>
+        <span className={ui.row}>
+          {note.approval?.needed
+            ? <ApprovalBadge approval={note.approval} />
+            : <span>Recorded by mistake? Deleting the note takes its lines out and puts the stock back.</span>}
+        </span>
+        <span className={ui.row}>
+          <ApprovalActions
+            note={note}
+            scope={{ refNo, logId }}
+            currentUser={currentUser}
+            onDone={message => { toast(message); router.refresh() }}
+          />
+          {deletable && (
+            <button type="button" className={`${ui.btn} ${ui.btnDangerGhost} ${ui.btnSm}`} onClick={() => setDeleting(note)}>
+              <IconTrash size={15} /> Delete note
+            </button>
+          )}
+        </span>
+      </>
+    )
   }
 
   const tabs = [
@@ -164,14 +194,7 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
                     {...doc}
                     settings={settings}
                     printPage={documents.length > 1}
-                    actions={canDelete && notes[i].deletable ? (
-                      <>
-                        <span>Recorded by mistake? Deleting the note takes its lines out and puts the stock back.</span>
-                        <button type="button" className={`${ui.btn} ${ui.btnDangerGhost} ${ui.btnSm}`} onClick={() => setDeleting(notes[i])}>
-                          <IconTrash size={15} /> Delete note
-                        </button>
-                      </>
-                    ) : null}
+                    actions={noteActions(notes[i])}
                   />
                 ))}
               </>

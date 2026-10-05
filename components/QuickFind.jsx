@@ -5,7 +5,7 @@ import { IconBuildingStore, IconPackage, IconSearch } from '@tabler/icons-react'
 import Modal from '@/components/ui/Modal'
 import { api } from '@/lib/api'
 import { isAdminRole } from '@/lib/constants'
-import { MAIN_NAV, ADMIN_NAV, ACCOUNT_NAV } from '@/components/nav'
+import { MAIN_NAV, ADMIN_NAV, ACCOUNT_NAV, APPROVALS_NAV } from '@/components/nav'
 import ui from '@/styles/ui.module.css'
 
 function matches(text, q) {
@@ -31,7 +31,12 @@ export default function QuickFind({ categories, currentUser, onClose }) {
     return () => clearTimeout(timer)
   }, [term])
 
-  const pages = [...MAIN_NAV, ...(isAdminRole(currentUser.role) ? ADMIN_NAV : []), ACCOUNT_NAV]
+  const pages = [
+    ...MAIN_NAV,
+    ...(currentUser.canApprove ? [APPROVALS_NAV] : []),
+    ...(isAdminRole(currentUser.role) ? ADMIN_NAV : []),
+    ACCOUNT_NAV,
+  ]
     .filter(p => !term || matches(`${p.label} ${p.keywords}`, term))
     .map(p => ({ key: p.href, group: 'Pages', label: p.label, href: p.href, icon: p.icon }))
 

@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma"
-import { requireUser } from "@/lib/auth"
+import { requireEditor, requireUser } from "@/lib/auth"
 import { json, fail, handleError } from "@/lib/http"
 import { isAdminRole } from "@/lib/constants"
 import { PRODUCT_WITH_BALANCES, parseAmount, setOpeningBalance } from "@/lib/openingBalance"
@@ -17,7 +17,7 @@ export async function GET() {
 // Body: { name, unitId, openingQty?, openingRate? } — the opening balance is admin-only
 export async function POST(req) {
   try {
-    const user = await requireUser()
+    const user = await requireEditor()
     const body = await req.json()
     const { name, unitId } = body
     if (!name?.trim() || !unitId) return fail("Enter a product name and choose its unit")

@@ -13,10 +13,12 @@ export async function GET() {
   }
 }
 
+// Body: { username, password, role?, canApprove? }. Roles: VIEWER (view and print only),
+// STANDARD, ADMIN and SUPER_ADMIN (only a Super admin can create one).
 export async function POST(req) {
   try {
     const actor = await requireAdmin()
-    const { username, password, role } = await req.json()
+    const { username, password, role, canApprove } = await req.json()
     if (!username?.trim() || !password) return fail("Enter a username and a password")
     if (password.length < MIN_PASSWORD_LENGTH)
       return fail(`The password must be at least ${MIN_PASSWORD_LENGTH} characters`)
@@ -26,7 +28,7 @@ export async function POST(req) {
       return fail("Only a Super admin can create another Super admin", 403)
 
     const user = await prisma.user.create({
-      data: { username: username.trim(), passwordHash: hashPassword(password), role: requestedRole },
+      data: { username: username.trim(), passwordHash: hashPassword(password), role: requestedRole, canApprove: canApprove === true },
     })
     return json(await getUserRow(user.id), 201)
   } catch (e) {

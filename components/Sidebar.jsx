@@ -10,11 +10,12 @@ import { useConfirm } from '@/components/ConfirmProvider'
 import { api } from '@/lib/api'
 import { ROLE_LABEL, isAdminRole } from '@/lib/constants'
 import { initials } from '@/lib/format'
-import { MAIN_NAV, ADMIN_NAV, isActivePath } from '@/components/nav'
+import { MAIN_NAV, ADMIN_NAV, APPROVALS_NAV, isActivePath } from '@/components/nav'
 import styles from './Sidebar.module.css'
 
+// awaitingApproval: stock outs waiting for an approver (shown to approvers on the Approvals item)
 export default function Sidebar({
-  categories, currentUser, companyName, collapsed, onToggle, mobileOpen, onCloseMobile, onOpenSearch,
+  categories, currentUser, companyName, collapsed, onToggle, mobileOpen, onCloseMobile, onOpenSearch, awaitingApproval = 0,
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -118,18 +119,19 @@ export default function Sidebar({
     window.location.assign('/login')
   }
 
-  function navItem({ href, label, icon: Icon }) {
+  function navItem({ href, label, icon: Icon }, badge = 0) {
     const active = isActivePath(pathname, href)
     return (
       <Link
         key={href}
         href={href}
-        title={collapsed ? label : undefined}
+        title={collapsed ? (badge ? `${label} (${badge})` : label) : undefined}
         className={`${styles.link} ${active ? styles.linkActive : ''}`}
         aria-current={active ? 'page' : undefined}
       >
         <Icon size={19} stroke={1.8} />
         <span className={styles.linkLabel}>{label}</span>
+        {badge > 0 && <span className={styles.linkBadge}>{badge > 99 ? '99+' : badge}</span>}
       </Link>
     )
   }
@@ -180,7 +182,8 @@ export default function Sidebar({
 
       <div className={styles.scroll}>
         <nav className={styles.section} aria-label="Main">
-          {MAIN_NAV.map(navItem)}
+          {MAIN_NAV.map(item => navItem(item))}
+          {currentUser.canApprove && navItem(APPROVALS_NAV, awaitingApproval)}
         </nav>
 
         <div className={styles.section}>
@@ -298,7 +301,7 @@ export default function Sidebar({
         {canManage && (
           <nav className={styles.section} aria-label="Administration">
             <div className={styles.sectionLabel}><span>Admin</span></div>
-            {ADMIN_NAV.map(navItem)}
+            {ADMIN_NAV.map(item => navItem(item))}
           </nav>
         )}
       </div>

@@ -8,7 +8,7 @@ import styles from './AppShell.module.css'
 
 // Signed-in frame: sidebar (collapsible on desktop, a drawer on small screens), Quick find
 // (Ctrl+K) and the page. Lives in the shared layout, so it keeps its state between pages.
-export default function AppShell({ user, categories, companyName, initialCollapsed, children }) {
+export default function AppShell({ user, categories, companyName, initialCollapsed, awaitingApproval = 0, children }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [drawerPath, setDrawerPath] = useState(null)
@@ -46,6 +46,7 @@ export default function AppShell({ user, categories, companyName, initialCollaps
         mobileOpen={drawerOpen}
         onCloseMobile={() => setDrawerPath(null)}
         onOpenSearch={() => { setDrawerPath(null); setSearchOpen(true) }}
+        awaitingApproval={awaitingApproval}
       />
       <div
         className={`${styles.overlay} ${drawerOpen ? styles.overlayOpen : ''}`}

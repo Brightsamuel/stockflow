@@ -7,7 +7,7 @@ import Field from '@/components/ui/Field'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { api } from '@/lib/api'
 import { fmtMoney, fmtNum, plural, todayInput } from '@/lib/format'
-import { useList, useRefExists, useScrollOnAdd, nextLineKey } from './hooks'
+import { postMovement, useList, useRefExists, useScrollOnAdd, nextLineKey } from './hooks'
 import ui from '@/styles/ui.module.css'
 
 const NEW_OWNER = '__new_owner__'
@@ -27,7 +27,7 @@ function noteLink(refNo, label) {
 // One ref no., date and owner for the whole receipt, followed by as many item lines as needed
 export default function StockInModal({ store, onClose, onDone }) {
   const router = useRouter()
-  const { toast } = useConfirm()
+  const { confirm, toast } = useConfirm()
   const today = todayInput()
   const [products, , productsLoaded] = useList('/api/products')
   const [owners, setOwners] = useList('/api/owners')
@@ -35,6 +35,11 @@ export default function StockInModal({ store, onClose, onDone }) {
   const [newOwnerName, setNewOwnerName] = useState('')
   const [refNo, setRefNo] = useState('')
   const [entryDate, setEntryDate] = useState(today)
+  const [forProjectId, setForProjectId] = useState('')
+  const [projects] = useList('/api/projects')
+  const [deliveredBy, setDeliveredBy] = useState('')
+  const [receivedBy, setReceivedBy] = useState('')
+  const [people] = useList('/api/people')
   const [lines, setLines] = useState(() => [blankLine()])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -59,7 +64,7 @@ export default function StockInModal({ store, onClose, onDone }) {
     if (filled.length === 0) { setError('Add at least one item.'); return }
     const bad = filled.find(l => !l.productId || l.rate === '' || parseFloat(l.rate) < 0 || !(parseFloat(l.quantity) > 0))
     if (bad) {
-      setError(`Line ${lines.indexOf(bad) + 1}: choose a product, and enter a rate (0 or more) and a quantity above 0.`)
+      setError(`Line ${lines.indexOf(bad) + 1}: choose a product, and enter a quantity above 0 and a rate (0 or more).`)
       return
     }
     if (!entryDate) { setError('Choose a date.'); return }
@@ -76,21 +81,22 @@ export default function StockInModal({ store, onClose, onDone }) {
         finalOwnerId = owner.id
       }
 
-      const data = await api(`/api/stores/${store.id}/stock-in`, {
-        method: 'POST',
-        body: {
-          refNo: refNo.trim() || null,
-          entryDate,
-          ownerId: finalOwnerId,
-          items: filled.map(l => ({
-            productId: l.productId,
-            rate: parseFloat(l.rate),
-            quantity: parseFloat(l.quantity),
-            // Left blank keeps the item's existing low-stock alert
-            lowStockAt: l.lowStockAt === '' ? null : parseFloat(l.lowStockAt),
-          })),
-        },
-      })
+      const data = await postMovement(`/api/stores/${store.id}/stock-in`, {
+        refNo: refNo.trim() || null,
+        entryDate,
+        ownerId: finalOwnerId,
+        forProjectId: forProjectId || null,
+        deliveredBy: deliveredBy.trim() || null,
+        receivedBy: receivedBy.trim() || null,
+        items: filled.map(l => ({
+          productId: l.productId,
+          rate: parseFloat(l.rate),
+          quantity: parseFloat(l.quantity),
+          // Left blank keeps the item's existing low-stock alert
+          lowStockAt: l.lowStockAt === '' ? null : parseFloat(l.lowStockAt),
+        })),
+      }, confirm)
+      if (!data) return
 
       const summary = `${plural(data.count, 'item')} received into ${store.name}${data.refNo ? ` under ${data.refNo}` : ''}.`
       toast(summary, { action: noteLink(data.refNo, 'Print received note') })
@@ -151,13 +157,37 @@ export default function StockInModal({ store, onClose, onDone }) {
         </Field>
       </div>
 
+      <Field
+        label="For project"
+        hint={forProjectId
+          ? 'Kept for this project: it gets its own line in the store and can only be issued to it (an admin can release leftovers to general stock).'
+          : 'Optional. Choose a project when the stock was supplied for it, e.g. by the contractor.'}
+      >
+        <select className={ui.input} value={forProjectId} onChange={e => setForProjectId(e.target.value)}>
+          <option value="">General stock (not for a project)</option>
+          {projects.map(p => <option key={p.id} value={p.id}>{p.name}{p.location ? ` (${p.location})` : ''}</option>)}
+        </select>
+      </Field>
+
+      <div className={ui.formRow2}>
+        <Field label="Delivered by" hint="Optional. Printed on the Goods Received Note; leave empty to write it by hand.">
+          <input className={ui.input} list="stock-in-people" value={deliveredBy} onChange={e => setDeliveredBy(e.target.value)} placeholder="Supplier's driver, contractor…" autoComplete="off" />
+        </Field>
+        <Field label="Received by" hint="Optional. The person who physically received the goods.">
+          <input className={ui.input} list="stock-in-people" value={receivedBy} onChange={e => setReceivedBy(e.target.value)} placeholder="Storekeeper's name" autoComplete="off" />
+        </Field>
+        <datalist id="stock-in-people">
+          {people.map(name => <option key={name} value={name} />)}
+        </datalist>
+      </div>
+
       {refExists ? (
         <div className={`${ui.alert} ${ui.alertInfo}`}>
           <IconInfoCircle size={17} />
           <span>Ref no. <strong>{refNo.trim()}</strong> already has entries. These items will be added to it.</span>
         </div>
       ) : (
-        <p className={ui.hint}>The ref no., date and owner apply to every item below.</p>
+        <p className={ui.hint}>The ref no., date, owner, project and names apply to every item below.</p>
       )}
 
       <div className={ui.stack}>
@@ -169,8 +199,8 @@ export default function StockInModal({ store, onClose, onDone }) {
                 <tr>
                   <th>#</th>
                   <th>Product</th>
-                  <th className={ui.num}>Rate (UGX)</th>
                   <th className={ui.num}>Qty</th>
+                  <th className={ui.num}>Rate (UGX)</th>
                   <th className={ui.num}>Low stock at</th>
                   <th className={ui.num}>Amount</th>
                   <th />
@@ -192,13 +222,13 @@ export default function StockInModal({ store, onClose, onDone }) {
                         {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.unit.name})</option>)}
                       </select>
                     </td>
-                    <td style={{ minWidth: 110 }}>
-                      <input type="number" min="0" inputMode="decimal" placeholder="0" className={`${ui.input} ${ui.inputSm} ${ui.inputNum}`}
-                        value={l.rate} onChange={e => setLine(l.key, 'rate', e.target.value)} aria-label={`Line ${i + 1} rate`} />
-                    </td>
                     <td style={{ minWidth: 90 }}>
                       <input type="number" min="0" inputMode="decimal" placeholder="0" className={`${ui.input} ${ui.inputSm} ${ui.inputNum}`}
                         value={l.quantity} onChange={e => setLine(l.key, 'quantity', e.target.value)} aria-label={`Line ${i + 1} quantity`} />
+                    </td>
+                    <td style={{ minWidth: 110 }}>
+                      <input type="number" min="0" inputMode="decimal" placeholder="0" className={`${ui.input} ${ui.inputSm} ${ui.inputNum}`}
+                        value={l.rate} onChange={e => setLine(l.key, 'rate', e.target.value)} aria-label={`Line ${i + 1} rate`} />
                     </td>
                     <td style={{ minWidth: 100 }}>
                       <input type="number" min="0" inputMode="decimal" placeholder="Keep" className={`${ui.input} ${ui.inputSm} ${ui.inputNum}`}

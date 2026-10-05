@@ -4,6 +4,7 @@ import { json, fail, handleError, parseDateRange } from "@/lib/http"
 import { LEDGER_TYPES } from "@/lib/movements"
 import {
   buildReport, buildRecipientReport, buildRefReport, buildProjectReport, buildLedgerReport, buildLowStockReport,
+  buildStockBalances, buildProjectMaterials,
 } from "@/lib/reports"
 
 // GET /api/reports?scope=…
@@ -12,6 +13,8 @@ import {
 //   external   [recipientId], from, to
 //   field      [projectId], [takenBy], from, to        (field records)
 //   ledger     [storeId | categoryId], [type], from, to
+//   balances   from, to                  (the whole inventory per item, opening stock included)
+//   projectmaterials  projectId, [storeId | categoryId], from, to  (received for / issued / returned / held)
 //   lowstock   [storeId | categoryId]
 //   ref        refNo
 // Every scope except ref also accepts ownerId.
@@ -85,6 +88,21 @@ export async function GET(req) {
         }
         const rows = await buildProjectReport(projectId, range.from, range.to, ownerId, takenBy)
         return json({ scope, label, ...period, takenBy, rows })
+      }
+      case "projectmaterials": {
+        const projectId = p.get("projectId")
+        if (!projectId) return fail("Choose a project")
+        const project = await prisma.project.findUnique({ where: { id: projectId } })
+        if (!project) return fail("Project not found", 404)
+        const target = await storeScope(p.get("storeId"), p.get("categoryId"))
+        if (target.error) return fail(target.error, 404)
+        const rows = await buildProjectMaterials({ projectId, storeIds: target.storeIds, from: range.from, to: range.to, ownerId })
+        const name = project.location ? `${project.name} (${project.location})` : project.name
+        return json({ scope, label: `${name} · ${target.label}`, ...period, rows })
+      }
+      case "balances": {
+        const rows = await buildStockBalances({ from: range.from, to: range.to, ownerId })
+        return json({ scope, label: "Whole inventory", ...period, rows })
       }
       case "ledger": {
         const target = await storeScope(p.get("storeId"), p.get("categoryId"))

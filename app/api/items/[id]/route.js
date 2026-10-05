@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma"
-import { requireUser, requireSuperAdmin } from "@/lib/auth"
+import { requireEditor, requireSuperAdmin } from "@/lib/auth"
 import { json, fail, handleError } from "@/lib/http"
 
 // A store row plus what the checks below need; opening-balance rows are managed from Products
@@ -14,7 +14,7 @@ async function findEntry(id) {
 export async function PUT(req, { params }) {
   const { id } = await params
   try {
-    const user = await requireUser()
+    const user = await requireEditor()
     const body = await req.json()
     const data = {}
     for (const field of ["rate", "quantity", "lowStockAt"]) {
@@ -43,6 +43,7 @@ export async function PUT(req, { params }) {
           storeId: existing.storeId,
           productId: existing.productId,
           ownerId: existing.ownerId,
+          forProjectId: existing.forProjectId,
           type: "EDIT",
           quantity: updated.quantity,
           rate: updated.rate,
@@ -74,6 +75,7 @@ export async function DELETE(req, { params }) {
           storeId: existing.storeId,
           productId: existing.productId,
           ownerId: existing.ownerId,
+          forProjectId: existing.forProjectId,
           type: "DELETE",
           quantity: existing.quantity,
           rate: existing.rate,

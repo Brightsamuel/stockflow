@@ -1,7 +1,8 @@
 import prisma from "@/lib/prisma"
-import { requireUser } from "@/lib/auth"
-import { json, fail, handleError, parseEntryDate } from "@/lib/http"
+import { requireEditor, requireUser } from "@/lib/auth"
+import { json, fail, handleError, parseEntryDate, personName } from "@/lib/http"
 import { applyStockMove } from "@/lib/stockMove"
+import { recentStockMove, savedAgo } from "@/lib/duplicates"
 
 export async function GET(req) {
   try {
@@ -27,13 +28,21 @@ export async function GET(req) {
 }
 
 // POST /api/transfers
-// Body: { sourceStoreId, targetStoreId | projectId | recipientId, takenBy?, refNo?, entryDate?, items: [{ entryId, quantity }] }
+// Body: { sourceStoreId, targetStoreId | projectId | recipientId, takenBy?, issuedBy?, receivedBy?, refNo?, entryDate?,
+//         items: [{ entryId, quantity }] }   (issuedBy / receivedBy: names typed for the note's signature blocks)
 // targetStoreId = transfer between stores; projectId / recipientId = stock out (leaves the inventory as used/issued).
 // A stock out to a project must say who is taking it to the field (takenBy).
+// The same movement saved again within a few minutes returns 409 { duplicate: true } unless
+// confirmDuplicate is set (e.g. an opening balance issued twice by mistake).
 export async function POST(req) {
   try {
-    const user = await requireUser()
-    const { sourceStoreId, targetStoreId, projectId, recipientId, takenBy, refNo, entryDate, items } = await req.json()
+    const user = await requireEditor()
+    const { sourceStoreId, targetStoreId, projectId, recipientId, takenBy, issuedBy, receivedBy, refNo, entryDate, items, confirmDuplicate } = await req.json()
+    const names = {
+      handedOverBy: personName(issuedBy, targetStoreId ? "Dispatched by" : "Issued by"),
+      // A project's stock is received by whoever takes it (Taken by)
+      receivedBy: projectId ? null : personName(receivedBy, "Received by"),
+    }
 
     if (!sourceStoreId) return fail("Source store required")
     if ([targetStoreId, projectId, recipientId].filter(Boolean).length !== 1)
@@ -50,9 +59,11 @@ export async function POST(req) {
 
     const sourceStore = await prisma.store.findUnique({
       where: { id: sourceStoreId },
-      include: { category: { select: { trackLogs: true } } },
+      include: { category: { select: { trackLogs: true, isSystem: true } } },
     })
     if (!sourceStore) return fail("Source store not found", 404)
+    // An opening balance issued to a store becomes that store's opening stock
+    const openingStock = sourceStore.category.isSystem && Boolean(targetStoreId)
     const sourceUserId = sourceStore.category.trackLogs ? user.id : null
 
     let outNote, inNote, targetUserId = null
@@ -63,8 +74,8 @@ export async function POST(req) {
       })
       if (!targetStore || targetStore.category.isSystem) return fail("Destination store not found", 404)
       targetUserId = targetStore.category.trackLogs ? user.id : null
-      outNote = `Transferred to ${targetStore.name}`
-      inNote = `Received from ${sourceStore.name}`
+      outNote = openingStock ? `Opening stock issued to ${targetStore.name}` : `Transferred to ${targetStore.name}`
+      inNote = openingStock ? "Opening stock, from the opening balance" : `Received from ${sourceStore.name}`
     } else if (projectId) {
       const project = await prisma.project.findUnique({ where: { id: projectId } })
       if (!project) return fail("Project not found", 404)
@@ -77,6 +88,28 @@ export async function POST(req) {
     if (taker) outNote += ` · taken by ${taker}`
 
     const ref = refNo?.trim() || null
+    if (!confirmDuplicate) {
+      const entries = await prisma.stockEntry.findMany({
+        where: { id: { in: items.map(i => i.entryId) } },
+        select: { id: true, productId: true, ownerId: true },
+      })
+      const byId = new Map(entries.map(e => [e.id, e]))
+      const earlier = entries.length === new Set(items.map(i => i.entryId)).size && await recentStockMove(prisma, {
+        sourceStoreId,
+        targetStoreId: targetStoreId || null,
+        projectId: projectId || null,
+        recipientId: recipientId || null,
+        lines: items.map(i => ({ productId: byId.get(i.entryId).productId, ownerId: byId.get(i.entryId).ownerId, quantity: i.quantity })),
+      })
+      if (earlier) {
+        const what = targetStoreId ? "transfer" : "stock out"
+        return json({
+          duplicate: true,
+          error: `The same ${what} from ${sourceStore.name} was saved ${savedAgo(earlier)}. Saving again moves the stock a second time.`,
+        }, 409)
+      }
+    }
+
     const count = await prisma.$transaction(
       tx => applyStockMove(tx, {
         sourceStoreId,
@@ -92,6 +125,8 @@ export async function POST(req) {
         sourceUserId,
         targetUserId,
         transferUserId: sourceUserId || targetUserId ? user.id : null,
+        ...names,
+        openingStock,
       }),
       { timeout: 20000 },
     )

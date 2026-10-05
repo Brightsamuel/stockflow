@@ -51,7 +51,7 @@ export default async function OverviewPage() {
     }),
     prisma.product.count(),
     prisma.stockLog.findMany({
-      where: { entryDate: { gte: monthStart() }, type: { in: ['IN', 'TRANSFER_OUT'] }, ...LIVE },
+      where: { entryDate: { gte: monthStart() }, type: { in: ['IN', 'TRANSFER_OUT', 'RETURN'] }, ...LIVE },
       select: { type: true, quantity: true, rate: true, projectId: true, recipientId: true, store: { select: { category: { select: { isSystem: true } } } } },
     }),
     prisma.stockLog.findMany({
@@ -95,7 +95,8 @@ export default async function OverviewPage() {
 
   const monthValue = test => monthLogs.filter(test).reduce((s, l) => s + l.quantity * l.rate, 0)
   const received = monthValue(l => l.type === 'IN' && !l.store.category.isSystem)
-  const used = monthValue(l => l.type === 'TRANSFER_OUT' && l.projectId)
+  // Used on projects: what was issued to them, less what came back
+  const used = monthValue(l => l.type === 'TRANSFER_OUT' && l.projectId) - monthValue(l => l.type === 'RETURN')
   const issued = monthValue(l => l.type === 'TRANSFER_OUT' && l.recipientId)
 
   const perStore = new Map(stores.map(s => [s.id, { ...s, items: 0, value: 0, low: 0 }]))
@@ -156,7 +157,7 @@ export default async function OverviewPage() {
               <div className={ui.list}>
                 {recent.map(l => {
                   const kind = movementKind(l, l.store.category.isSystem)
-                  const to = l.project?.name ?? l.recipient?.name ?? (l.type === 'TRANSFER_OUT' ? l.note?.replace(/^Transferred to /, '') : null)
+                  const to = l.project?.name ?? l.recipient?.name ?? (l.type === 'TRANSFER_OUT' ? l.note?.replace(/^(Transferred|Opening stock issued) to /, '') : null)
                   return (
                     <div key={l.id} className={ui.listItem}>
                       <MovementBadge kind={kind} />
@@ -165,7 +166,9 @@ export default async function OverviewPage() {
                           <Link href={`/search?product=${l.productId}`} className={ui.cellLink}>{l.product.name}</Link>
                         </div>
                         <div className={`${ui.listMeta} ${ui.truncate}`}>
-                          {l.store.category.isSystem ? 'Opening balance' : l.store.name}{to ? ` → ${to}` : ''}
+                          {l.type === 'RETURN'
+                            ? `${to} → ${l.store.name}`
+                            : <>{l.store.category.isSystem ? 'Opening balance' : l.store.name}{to ? ` → ${to}` : ''}</>}
                           {l.user ? ` · ${l.user.username}` : ''}
                           {l.refNo && <> · <Link href={`/notes?ref=${encodeURIComponent(l.refNo)}`} className={ui.link}>{l.refNo}</Link></>}
                         </div>

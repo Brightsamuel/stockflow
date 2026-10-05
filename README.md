@@ -2,13 +2,15 @@
 
 Multi-store inventory for teams that receive stock, move it between stores and issue it to projects in the field.
 
-- **Stores and categories.** Stock in (one ref no. for many items), transfers between stores, and stock out to a project (recorded as *used*, with *Taken by*) or to an external party (*issued*).
-- **Products.** One catalogue for every store, with opening balances that can be issued like any other stock.
+- **Stores and categories.** Stock in (one ref no. for many items), transfers between stores, stock out to a project (recorded as *used*, with *Taken by*) or to an external party (*issued*), and returns from a project. Names for the note's signature blocks (delivered by, received by, issued by…) are typed when recording; left empty, the line is signed by hand. A save that repeats one made moments before asks before saving it again.
+- **Products.** One catalogue for every store, with opening balances that can be issued to stores, projects or external parties (see *Opening stock* below).
+- **Project stock.** Stock received for a project is kept for it; see below.
 - **Stock owners.** Optional, per batch; shown in stores, reports and history.
 - **History.** Every movement of a product, permanently kept: received, transferred, used, issued, adjusted, removed and restored. Pick any period to see the opening balance, what came in and went out, the closing balance and each store's balance after every movement; print it, save it as a PDF or export it to Excel.
-- **Reports.** Store and category balances (opening, added, deducted, adjusted, closing and value), a movement ledger, external issues, low stock, field records and ref no. lookups. Every report can be printed, saved as a PDF or exported to Excel, with the company header.
-- **Documents.** Printable Goods Received, Material Issue, Goods Issue and Stock Transfer notes with signature lines, by ref no. (or, for stock saved without one, from the store's movement log). A note entered by mistake can be deleted with all its lines by a Super admin; see below.
-- **Administration.** Users with Standard / Admin / Super admin roles, lists (units, owners, projects, recipients) and company settings.
+- **Reports.** Store and category balances (opening, added, deducted, adjusted, closing and value), stock balances for the whole inventory, a movement ledger, external issues, project materials, low stock, field records and ref no. lookups. Every report, the Products catalogue and each store's stock sheet can be printed, saved as a PDF or exported to Excel, with the company header.
+- **Documents.** Printable Goods Received, Material Issue, Goods Issue, Stock Transfer and Material Return notes with signature lines, by ref no. (or, for stock saved without one, from the store's movement log). A note entered by mistake can be deleted with all its lines by a Super admin; see below.
+- **Approvals.** Stock outs are signed off in the system after the stock has left; see below.
+- **Administration.** Users with Viewer / Standard / Admin / Super admin roles and the Approver permission, lists (units, owners, projects, recipients) and company settings.
 
 ## Tech stack
 
@@ -48,11 +50,29 @@ The app adds `connect_timeout=30` to the database URL when it isn't set, so a da
 
 ## Roles
 
-| | Standard | Admin | Super admin |
-|---|---|---|---|
-| Stock in, transfer, stock out, edit items, reports, documents | ✓ | ✓ | ✓ |
-| Opening balances, stores and categories, lists, users, settings | | ✓ | ✓ |
-| Remove / restore items, delete / restore notes, activity tracking, delete users, create Super admins | | | ✓ |
+| | Viewer | Standard | Admin | Super admin |
+|---|---|---|---|---|
+| See and print everything: stores, products, history, reports, documents | ✓ | ✓ | ✓ | ✓ |
+| Stock in, transfer, stock out, returns, edit items, products | | ✓ | ✓ | ✓ |
+| Opening balances, stores and categories, lists, users, settings, release project stock | | | ✓ | ✓ |
+| Remove / restore items, delete / restore notes, activity tracking, delete users, create Super admins | | | | ✓ |
+
+**Approver** is a permission an admin gives to any user (Viewers included) under Users: it lets them approve or query stock outs. An approver can't approve a stock out they recorded themselves. Viewers sign in with a username and password like everyone else.
+
+## Opening stock
+
+An opening balance is entered on a product (Products) and held apart from the stores until it is issued. Issuing it to a store makes it that store's **opening stock**: stock on hand from the start, shown under *Opening* in the store's reports for any period (never as stock added that day) and included in its closing balance. Whatever has not been issued yet stays as *opening stock not yet in a store*; the **Stock balances** report shows it beside the stock in stores, so the whole inventory per item is in one place. Product history shows each issue once, as *Opening stock*.
+
+## Project stock and returns
+
+- **Received for a project.** On Stock in, choose *For project* when the stock was supplied for a project (e.g. by the contractor). It gets its own line in the store, marked *For <project>*.
+- **Kept for it.** That line can only be issued to that project, or moved to another store where it stays kept for it; it can't go to an external party or another project. An admin can **release** what is left to general stock (the open-padlock button on the line).
+- **Returns.** *Return* on a store records stock coming back from a project's site, onto the project's line or into general stock. Nothing more can come back than was issued to that project from that store, less earlier returns. Each return has a printable Material Return Note.
+- **Project materials** (Reports and Field records): per store and item, what was received for the project, issued to it, returned, used (issued − returned), released and still held for it, for any period. For example: received 500, issued 450, returned 30 → used 420, held 80.
+
+## Approvals
+
+Stock outs to a project or an external party are approved in the system after the stock has left; nobody waits at the store. Each issue note shows *Awaiting approval* until an approver approves it on the **Approvals** page (or on the note in Documents), and their name and the date then fill its *Approved by* line. An approver can also **query** a note with a comment; it stays on the Approvals page until it is approved. Every decision is kept, and Field records and External issues show who approved each line. Goods Received and Stock Transfer notes keep an *Approved by* line to sign by hand.
 
 ## Records are permanent
 
