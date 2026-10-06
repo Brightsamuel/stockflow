@@ -5,7 +5,7 @@ import { IconAlertCircle, IconAlertTriangle, IconInfoCircle, IconTrash } from '@
 import Modal from '@/components/ui/Modal'
 import Field from '@/components/ui/Field'
 import { api } from '@/lib/api'
-import { fmtNum, fmtSigned } from '@/lib/format'
+import { fmtDateTime, fmtNum, fmtSigned } from '@/lib/format'
 import ui from '@/styles/ui.module.css'
 
 const REASON_MAX = 500
@@ -106,6 +106,22 @@ export default function DeleteNoteModal({ note, refNo, logId, onClose, onDeleted
             </div>
           )}
         </div>
+
+        {plan?.corrections?.length > 0 && !blocked && (
+          <div className={`${ui.alert} ${ui.alertWarning}`}>
+            <IconAlertTriangle size={17} />
+            <div className={ui.stackTight}>
+              <strong>These store corrections are undone too</strong>
+              <span>
+                They were made in the store after this note was saved, and nothing else has happened to these
+                items since, so the items go back to how they were before the note:
+              </span>
+              {plan.corrections.map(c => (
+                <span key={c.id}>{fmtDateTime(c.at)} · {c.store} · {c.product}: {c.what}</span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {(loadError || plan?.problems.length > 0) && (
           <div className={`${ui.alert} ${ui.alertDanger}`}>

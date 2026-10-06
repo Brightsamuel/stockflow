@@ -101,7 +101,7 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
   async function removeItem(item) {
     const ok = await confirm({
       title: 'Remove item',
-      message: `Remove ${item.name}${item.owner !== '—' ? ` (${item.owner})` : ''} from ${store.name}?\n\nIts ${fmtNum(item.quantity)} ${item.unit} leave the store's balance and the removal is recorded in the history. It can be restored later from Removed items.`,
+      message: `Remove ${item.name}${item.owner !== '—' ? ` (${item.owner})` : ''} from ${store.name}?\n\nIts ${fmtNum(item.quantity)} ${item.unit} leave the store's balance and the removal is recorded in the history. It can be restored later from Removed items.\n\nThis doesn't change the note the stock came in on. If that note was entered wrongly, delete the note in Documents instead.`,
       confirmLabel: 'Remove item',
       danger: true,
     })
