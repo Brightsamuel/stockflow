@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { IconAlertTriangle, IconArrowRight, IconEye, IconFileText, IconRestore, IconSearch, IconTrash } from '@tabler/icons-react'
+import { IconAlertTriangle, IconArrowRight, IconEdit, IconEye, IconFileText, IconRestore, IconSearch, IconTrash } from '@tabler/icons-react'
 import PageHeader from '@/components/ui/PageHeader'
 import Field from '@/components/ui/Field'
 import Tabs from '@/components/ui/Tabs'
@@ -12,6 +12,7 @@ import ReportDocument from '@/components/ui/ReportDocument'
 import EmptyState from '@/components/ui/EmptyState'
 import RefSearch from '@/components/RefSearch'
 import DeleteNoteModal from '@/components/DeleteNoteModal'
+import EditNoteModal from '@/components/EditNoteModal'
 import ApprovalActions, { ApprovalBadge } from '@/components/ApprovalActions'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { api } from '@/lib/api'
@@ -47,12 +48,14 @@ function noteName(note) {
 
 // refNo or logId: which notes are open (logId: a stock in or stock out saved without a ref no.).
 // canDelete: Super admins can delete a note and restore deleted ones (the Deleted tab).
-export default function NotesView({ refNo, logId, notes, settings, canDelete = false, deletions = [], initialTab = 'notes', currentUser = null }) {
+// canEditNotes: Admins and Super admins can edit a Goods Received Note.
+export default function NotesView({ refNo, logId, notes, settings, canDelete = false, canEditNotes = false, deletions = [], initialTab = 'notes', currentUser = null }) {
   const router = useRouter()
   const { confirm, toast } = useConfirm()
   const [query, setQuery] = useState(refNo)
   const [tab, setTab] = useState(initialTab)
   const [deleting, setDeleting] = useState(null)
+  const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [busyId, setBusyId] = useState(null)
   const documents = notes.map(toDocument)
@@ -80,10 +83,13 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
   }
 
   async function restore(deletion) {
+    const item = deletion.kind === 'ITEM'
     const ok = await confirm({
-      title: 'Restore note',
-      message: `Restore ${noteName(deletion)}?\n\nIts ${plural(deletion.itemCount, 'line')} count again in stock, reports and product history, and the stock moves again as it did when it was recorded. Every store involved must still have enough stock.`,
-      confirmLabel: 'Restore note',
+      title: item ? 'Restore item' : 'Restore note',
+      message: item
+        ? `Restore ${deletion.summary}?\n\nIts history comes back to the product's history, reports and its notes, and the item goes back to the store's Removed items.`
+        : `Restore ${noteName(deletion)}?\n\nIts ${plural(deletion.itemCount, 'line')} count again in stock, reports and product history, and the stock moves again as it did when it was recorded. Every store involved must still have enough stock.`,
+      confirmLabel: item ? 'Restore item' : 'Restore note',
     })
     if (!ok) return
     setBusyId(deletion.id)
@@ -102,13 +108,14 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
   // Delete note for Super admins
   function noteActions(note) {
     const deletable = canDelete && note.deletable
-    if (!deletable && !note.approval?.needed) return null
+    const editable = canEditNotes && note.editable
+    if (!deletable && !editable && !note.approval?.needed) return null
     return (
       <>
         <span className={ui.row}>
           {note.approval?.needed
             ? <ApprovalBadge approval={note.approval} />
-            : <span>Recorded by mistake? Deleting the note takes its lines out and puts the stock back.</span>}
+            : <span>{editable ? 'A line wrong or missing? Edit the note. ' : ''}{deletable ? 'Recorded by mistake? Deleting the note takes its lines out and puts the stock back.' : ''}</span>}
         </span>
         <span className={ui.row}>
           <ApprovalActions
@@ -117,6 +124,11 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
             currentUser={currentUser}
             onDone={message => { toast(message); router.refresh() }}
           />
+          {editable && (
+            <button type="button" className={`${ui.btn} ${ui.btnSecondary} ${ui.btnSm}`} onClick={() => setEditing(note)}>
+              <IconEdit size={15} /> Edit note
+            </button>
+          )}
           {deletable && (
             <button type="button" className={`${ui.btn} ${ui.btnDangerGhost} ${ui.btnSm}`} onClick={() => setDeleting(note)}>
               <IconTrash size={15} /> Delete note
@@ -206,9 +218,10 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
           <section className={`${ui.card} ${ui.cardFlush}`}>
             <div className={ui.cardHeader}>
               <div>
-                <h2 className={ui.cardTitle}><IconTrash size={17} /> Deleted notes</h2>
+                <h2 className={ui.cardTitle}><IconTrash size={17} /> Deleted notes and items</h2>
                 <p className={ui.cardSubtitle}>
-                  Kept for the record and left out of stock, reports and product history. Restoring one counts it again.
+                  Notes deleted here and items deleted for good from a store, kept for the record and left out of stock,
+                  reports and product history. Restoring one counts it again.
                 </p>
               </div>
             </div>
@@ -279,6 +292,15 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
 
       {deleting && (
         <DeleteNoteModal note={deleting} refNo={refNo} logId={logId} onClose={() => setDeleting(null)} onDeleted={onDeleted} />
+      )}
+      {editing && (
+        <EditNoteModal
+          note={editing}
+          refNo={refNo}
+          logId={logId}
+          onClose={() => setEditing(null)}
+          onEdited={() => { setEditing(null); toast(`${noteName(editing)} edited`); router.refresh() }}
+        />
       )}
 
       {viewing && (

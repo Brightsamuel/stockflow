@@ -8,7 +8,7 @@ Multi-store inventory for teams that receive stock, move it between stores and i
 - **Stock owners.** Optional, per batch; shown in stores, reports and history.
 - **History.** Every movement of a product, permanently kept: received, transferred, used, issued, adjusted, removed and restored. Pick any period to see the opening balance, what came in and went out, the closing balance and each store's balance after every movement; print it, save it as a PDF or export it to Excel.
 - **Reports.** Store and category balances (opening, added, deducted, adjusted, closing and value), stock balances for the whole inventory, a movement ledger, external issues, project materials, low stock, field records and ref no. lookups. Every report, the Products catalogue and each store's stock sheet can be printed, saved as a PDF or exported to Excel, with the company header.
-- **Documents.** Printable Goods Received, Material Issue, Goods Issue, Stock Transfer and Material Return notes with signature lines, by ref no. (or, for stock saved without one, from the store's movement log). A note entered by mistake can be deleted with all its lines by a Super admin; see below.
+- **Documents.** Printable Goods Received, Material Issue, Goods Issue, Stock Transfer and Material Return notes with signature lines, by ref no. (or, for stock saved without one, from the store's movement log). A Goods Received Note with a wrong or missing line can be edited by an Admin, and a note entered by mistake deleted with all its lines by a Super admin; see below.
 - **Approvals.** Stock outs are signed off in the system after the stock has left; see below.
 - **Administration.** Users with Viewer / Standard / Admin / Super admin roles and the Approver permission, lists (units, owners, projects, recipients) and company settings.
 
@@ -54,8 +54,10 @@ The app adds `connect_timeout=30` to the database URL when it isn't set, so a da
 |---|---|---|---|---|
 | See and print everything: stores, products, history, reports, documents | ✓ | ✓ | ✓ | ✓ |
 | Stock in, transfer, stock out, returns, edit items, products | | ✓ | ✓ | ✓ |
-| Opening balances, stores and categories, lists, users, settings, release project stock | | | ✓ | ✓ |
-| Remove / restore items, delete / restore notes, activity tracking, delete users, create Super admins | | | | ✓ |
+| Opening balances, stores and categories, lists, users, settings, release project stock, edit Goods Received Notes | | | ✓ | ✓ |
+| Remove / restore items, delete items for good, delete / restore notes, activity tracking, delete users, create Super admins | | | | ✓ |
+
+A user's role is changed from **Users**: click their role (e.g. *Admin · Change*).
 
 **Approver** is a permission an admin gives to any user (Viewers included) under Users: it lets them approve or query stock outs. An approver can't approve a stock out they recorded themselves. Viewers sign in with a username and password like everyone else.
 
@@ -87,6 +89,14 @@ A Super admin can delete a whole received, issue or transfer note from **Documen
 Nothing is erased. The note's lines stay in the database marked as deleted, and are left out of stock, reports, product history, documents and the movement log. **Documents → Deleted** lists every deleted note with who deleted it, when and why; each can be viewed and restored, which counts it again and moves its stock back as it was recorded.
 
 A delete (or restore) is refused rather than let a balance go below zero: for example a receipt whose stock has since been issued, until that issue is dealt with. Opening balances are changed from Products, not deleted as notes.
+
+### Editing a Goods Received Note
+
+An Admin or Super admin can correct a Goods Received Note from **Documents** (*Edit note*): change a line's quantity or rate (e.g. 90 entered where 79 came in), take a line off, or add a forgotten one. The store's stock moves by the difference, and an edit is refused if less is left than it takes out. The note then shows *Edited* with the date, who changed what and the reason. The lines as they were are kept in the database but no longer count anywhere, so reports and product history show the corrected note with no adjustments. To change it back, edit the note again.
+
+### Deleting an item for good
+
+A removed item (a store's **Removed items**) can be deleted for good by a Super admin. When everything recorded for it in that store is stock received on notes and corrections made in the store (edits, removals, restores), its whole history goes with it: it leaves product history, reports and the notes it was on (a note with other lines keeps them). The dialog lists what goes and asks for a reason; it is kept under **Documents → Deleted** and can be restored from there, back into Removed items. If some of its stock was issued or moved, only the row goes and its history stays, since those records depend on it.
 
 ## Security
 

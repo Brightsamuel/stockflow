@@ -24,6 +24,7 @@ import StockMoveModal, { TRANSFER_DESTINATIONS, STOCK_OUT_DESTINATIONS } from '.
 import EditItemModal from './EditItemModal'
 import ReturnModal from './ReturnModal'
 import ReleaseModal from './ReleaseModal'
+import DeleteForGoodModal from './DeleteForGoodModal'
 import ui from '@/styles/ui.module.css'
 
 // Lines recorded on a received, issue, transfer or return note (the rest are adjustments)
@@ -101,7 +102,7 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
   async function removeItem(item) {
     const ok = await confirm({
       title: 'Remove item',
-      message: `Remove ${item.name}${item.owner !== '—' ? ` (${item.owner})` : ''} from ${store.name}?\n\nIts ${fmtNum(item.quantity)} ${item.unit} leave the store's balance and the removal is recorded in the history. It can be restored later from Removed items.\n\nThis doesn't change the note the stock came in on. If that note was entered wrongly, delete the note in Documents instead.`,
+      message: `Remove ${item.name}${item.owner !== '—' ? ` (${item.owner})` : ''} from ${store.name}?\n\nIts ${fmtNum(item.quantity)} ${item.unit} leave the store's balance and the removal is recorded in the history. It can be restored later from Removed items.\n\nThis doesn't change the note the stock came in on. If that note was entered wrongly, use Edit note on it in Documents instead.`,
       confirmLabel: 'Remove item',
       danger: true,
     })
@@ -110,16 +111,6 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
 
   function restoreItem(entry) {
     act(entry.id, () => api(`/api/items/${entry.id}/restore`, { method: 'POST' }), `${entry.name} restored to ${store.name}`)
-  }
-
-  async function deletePermanently(entry) {
-    const ok = await confirm({
-      title: 'Delete for good',
-      message: `Delete the removed ${entry.name} row for good?\n\nIts movement history is kept, but the row can no longer be restored.`,
-      confirmLabel: 'Delete for good',
-      danger: true,
-    })
-    if (ok) act(entry.id, () => api(`/api/items/${entry.id}/permanent`, { method: 'DELETE' }), `${entry.name} deleted for good`)
   }
 
   const tabs = [
@@ -373,7 +364,7 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
                             <button type="button" className={`${ui.btn} ${ui.btnSecondary} ${ui.btnSm}`} onClick={() => restoreItem(entry)} disabled={busyId === entry.id}>
                               <IconRestore size={15} /> Restore
                             </button>
-                            <button type="button" className={`${ui.btn} ${ui.btnDangerGhost} ${ui.btnSm}`} onClick={() => deletePermanently(entry)} disabled={busyId === entry.id}>
+                            <button type="button" className={`${ui.btn} ${ui.btnDangerGhost} ${ui.btnSm}`} onClick={() => setModal({ forGood: entry })} disabled={busyId === entry.id}>
                               Delete for good
                             </button>
                           </div>
@@ -412,6 +403,14 @@ export default function StoreDashboard({ store, items, deletedItems = [], moveme
       {modal?.edit && <EditItemModal item={modal.edit} onClose={() => setModal(null)} onDone={done} />}
       {modal === 'return' && <ReturnModal store={{ ...store, items }} onClose={() => setModal(null)} onDone={done} />}
       {modal?.release && <ReleaseModal item={modal.release} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.forGood && (
+        <DeleteForGoodModal
+          entry={modal.forGood}
+          storeName={store.name}
+          onClose={() => setModal(null)}
+          onDone={message => { toast(message); done() }}
+        />
+      )}
     </>
   )
 }

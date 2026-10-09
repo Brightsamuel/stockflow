@@ -73,8 +73,8 @@ export default function EditItemModal({ item, onClose, onDone }) {
             <IconInfoCircle size={17} />
             <span>
               The balance changes by <strong>{fmtSigned(change)} {item.unit}</strong>. This is recorded as an adjustment in the
-              product&apos;s history and in reports. It does not change the note the stock came in on: to correct a wrong
-              note, delete it in Documents and record it again.
+              product&apos;s history and in reports. It does not change the note the stock came in on: to correct a
+              delivery note, use <strong>Edit note</strong> on it in Documents.
             </span>
           </div>
         )}

@@ -21,8 +21,8 @@ const ROLE_TONE = { VIEWER: 'teal', STANDARD: 'neutral', ADMIN: 'info', SUPER_AD
 const ROLE_HELP = {
   VIEWER: 'Can see and print everything, but records and changes nothing.',
   STANDARD: 'Works in the stores: stock in, transfers, stock out, reports.',
-  ADMIN: 'Also manages stores, categories, lists, users and settings.',
-  SUPER_ADMIN: 'Full control, including removing items, deleting notes and activity tracking.',
+  ADMIN: 'Also edits Goods Received Notes and manages stores, categories, lists, users and settings.',
+  SUPER_ADMIN: 'Full control, including removing items, deleting notes and items for good, and activity tracking.',
 }
 const APPROVER_HELP = 'Signs off stock outs on the Approvals page; their name then fills "Approved by" on the issue note. Any role can be given this.'
 
@@ -304,7 +304,14 @@ export default function UsersManager({ users, currentUserId, currentUserRole }) 
                           <span className={ui.cellStrong}>{u.username}{isSelf && <span className={ui.cellSub}>You</span>}</span>
                         </div>
                       </td>
-                      <td><Badge tone={ROLE_TONE[u.role]}>{ROLE_LABEL[u.role] ?? u.role}</Badge></td>
+                      <td>
+                        {canChange ? (
+                          <button type="button" className={ui.badgeButton} title="Change role and approval" onClick={() => setModal({ access: u })} disabled={busyId === u.id}>
+                            <Badge tone={ROLE_TONE[u.role]}>{ROLE_LABEL[u.role] ?? u.role}</Badge>
+                            <span>Change</span>
+                          </button>
+                        ) : <Badge tone={ROLE_TONE[u.role]}>{ROLE_LABEL[u.role] ?? u.role}</Badge>}
+                      </td>
                       <td>{u.canApprove ? <Badge tone="teal" dot>Approver</Badge> : <span className={ui.cellMuted}>—</span>}</td>
                       <td>
                         {!u.isActive

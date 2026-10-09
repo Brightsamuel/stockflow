@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
 import { getSettings } from '@/lib/settings'
+import { isAdminRole } from '@/lib/constants'
 import { buildNotes, noteScope } from '@/lib/notes'
 import { listDeletions } from '@/lib/deletions'
 import NotesView from '@/components/NotesView'
@@ -44,6 +45,7 @@ export default async function NotesPage({ searchParams }) {
       notes={notes}
       settings={settings}
       canDelete={isSuperAdmin}
+      canEditNotes={isAdminRole(user.role)}
       deletions={deletions}
       initialTab={tab}
       currentUser={{ id: user.id, canApprove: user.canApprove }}

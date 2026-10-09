@@ -171,7 +171,10 @@ model Transfer {
 // also the record of who deleted what, when and why, and who restored it.
 model Deletion {
   id           String     @id @default(cuid())
-  kind         String     // RECEIPT | FIELD | EXTERNAL | TRANSFER (see lib/notes)
+  // DELETE: a note deleted, or an item deleted for good (kind ITEM), and restorable.
+  // EDIT: the lines a Goods Received Note had before an edit (see lib/noteEdits); not restorable.
+  action       String     @default("DELETE")
+  kind         String     // RECEIPT | FIELD | EXTERNAL | TRANSFER (see lib/notes) | ITEM
   refNo        String?
   title        String     // e.g. "Goods Received Note"
   summary      String     // e.g. "Main Store → Site A"

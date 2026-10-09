@@ -377,6 +377,24 @@ select.inputSm { padding-right: 30px; background-position: right 8px center; }
 .cellActions { display: flex; justify-content: flex-end; gap: 2px; }
 .cellLink { font-weight: 600; color: var(--text); }
 .cellLink:hover { color: var(--brand); text-decoration: underline; }
+/* A badge that opens something, e.g. a user's role: the badge plus a "Change" link */
+.badgeButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  cursor: pointer;
+}
+.badgeButton:hover:not(:disabled) > :last-child { text-decoration: underline; }
+.badgeButton:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.badgeButton:disabled { cursor: default; opacity: 0.6; }
 .tableEmpty { padding: 28px 14px !important; text-align: center; color: var(--text-muted) !important; }
 
 /* ── Badges ──────────────────────────────────────────────────────────────── */
