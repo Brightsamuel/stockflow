@@ -109,9 +109,15 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
   function noteActions(note) {
     const deletable = canDelete && note.deletable
     const editable = canEditNotes && note.editable
-    if (!deletable && !editable && !note.approval?.needed) return null
+    const edited = note.edited && (
+      <span className={ui.row} style={{ flexBasis: '100%' }}>
+        <IconEdit size={15} /> <span><strong>Edited</strong> {note.edited}</span>
+      </span>
+    )
+    if (!deletable && !editable && !note.approval?.needed) return edited || null
     return (
       <>
+        {edited}
         <span className={ui.row}>
           {note.approval?.needed
             ? <ApprovalBadge approval={note.approval} />

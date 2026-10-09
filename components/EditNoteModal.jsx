@@ -294,8 +294,9 @@ export default function EditNoteModal({ note, refNo, logId, onClose, onEdited })
         <div className={`${ui.alert} ${ui.alertInfo}`}>
           <IconInfoCircle size={17} />
           <span>
-            The store&apos;s stock moves by the difference. The note shows what changed, by whom and why; the lines as they
-            were are kept for the record but no longer count in stock, reports or product history.
+            Saving changes the store&apos;s stock by the difference only. In Documents the note is marked as edited, with by
+            whom and why; the printed note shows only the corrected lines. The old figures are kept on file but no longer
+            appear in stock, reports or history.
           </span>
         </div>
 

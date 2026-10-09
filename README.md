@@ -92,7 +92,7 @@ A delete (or restore) is refused rather than let a balance go below zero: for ex
 
 ### Editing a Goods Received Note
 
-An Admin or Super admin can correct a Goods Received Note from **Documents** (*Edit note*): change a line's quantity or rate (e.g. 90 entered where 79 came in), take a line off, or add a forgotten one. The store's stock moves by the difference, and an edit is refused if less is left than it takes out. The note then shows *Edited* with the date, who changed what and the reason. The lines as they were are kept in the database but no longer count anywhere, so reports and product history show the corrected note with no adjustments. To change it back, edit the note again.
+An Admin or Super admin can correct a Goods Received Note from **Documents** (*Edit note*): change a line's quantity or rate (e.g. 90 entered where 79 came in), take a line off, or add a forgotten one. The store's stock moves by the difference, and an edit is refused if less is left than it takes out. In Documents the note then shows *Edited* with the date, who changed what and the reason; the printed note and PDF show only the corrected lines. The lines as they were are kept in the database but no longer count anywhere, so reports and product history show the corrected note with no adjustments. To change it back, edit the note again.
 
 ### Deleting an item for good
 
