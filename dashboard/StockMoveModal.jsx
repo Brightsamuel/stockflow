@@ -1,12 +1,13 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { IconAlertCircle, IconCircleCheck, IconInfoCircle, IconPlus, IconX } from '@tabler/icons-react'
+import { IconAlertCircle, IconAlertTriangle, IconCircleCheck, IconInfoCircle, IconPlus, IconX } from '@tabler/icons-react'
 import Modal from '@/components/ui/Modal'
 import Field from '@/components/ui/Field'
 import { useConfirm } from '@/components/ConfirmProvider'
 import { api } from '@/lib/api'
 import { fmtMoney, fmtNum, plural, todayInput } from '@/lib/format'
+import { NO_OWNER } from '@/lib/owners'
 import { postMovement, useList, useRefExists, useScrollOnAdd, nextLineKey } from './hooks'
 import ui from '@/styles/ui.module.css'
 
@@ -19,6 +20,7 @@ export const ISSUE_DESTINATIONS = ['store', 'project', 'external']
 
 const NEW_RECIPIENT = '__new_recipient__'
 const NEW_PROJECT = '__new_project__'
+const NEW_OWNER = '__new_owner__'
 
 const DESTINATION_LABEL = {
   store: 'Another store',
@@ -44,7 +46,9 @@ function canSend(item, destType, projectId) {
 }
 
 // store: { id, name, items: [{ id, name, unit, owner, rate, quantity }] }
-export default function StockMoveModal({ title, destinations, store, allStores, onClose, onDone, initialItemId = '', allowNext = true }) {
+// openingBalance: issuing from a product's opening balance, which has no owner; issued to a store,
+// the stock owner is chosen here
+export default function StockMoveModal({ title, destinations, store, allStores, onClose, onDone, initialItemId = '', allowNext = true, openingBalance = false }) {
   const router = useRouter()
   const { confirm, toast } = useConfirm()
   const today = todayInput()
@@ -69,9 +73,14 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
   const [projects, setProjects] = useList('/api/projects', needsProjects)
   const [recipients, setRecipients] = useList('/api/recipients', destinations.includes('external'))
   const [takers, setTakers] = useList('/api/taken-by', needsProjects)
+  const [owners, setOwners] = useList('/api/owners', openingBalance)
+  const [ownerId, setOwnerId] = useState('')
+  const [newOwnerName, setNewOwnerName] = useState('')
 
   // Stock going out to a project (the field) must say who is taking it
   const needsTaker = destType === 'project'
+  // Opening stock going into a store is given its owner (or "No owner") on purpose
+  const needsOwner = openingBalance && destType === 'store'
 
   const refExists = useRefExists(refNo)
   const bodyRef = useScrollOnAdd(lines.length)
@@ -108,6 +117,8 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
     }
     if (!entryDate) return 'Choose a date.'
     if (destType === 'store' && !targetStoreId) return 'Choose the destination store.'
+    if (needsOwner && !ownerId) return 'Choose who this stock belongs to, or "No owner".'
+    if (needsOwner && ownerId === NEW_OWNER && !newOwnerName.trim()) return "Enter the new owner's name."
     if (destType === 'project' && !projectId) return 'Choose a project, or "+ New project".'
     if (destType === 'project' && projectId === NEW_PROJECT && !newProject.name.trim()) return 'Enter the project name.'
     if (destType === 'external' && !recipientId) return 'Choose a recipient, or "+ New recipient".'
@@ -134,6 +145,16 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
 
       if (destType === 'store') {
         body.targetStoreId = targetStoreId
+        if (needsOwner) {
+          body.ownerId = ownerId
+          if (ownerId === NEW_OWNER) {
+            const owner = await api('/api/owners', { method: 'POST', body: { name: newOwnerName.trim() } })
+            setOwners(list => [...list, owner].sort((a, b) => a.name.localeCompare(b.name)))
+            setOwnerId(owner.id)
+            setNewOwnerName('')
+            body.ownerId = owner.id
+          }
+        }
       } else if (destType === 'project') {
         body.projectId = projectId
         if (projectId === NEW_PROJECT) {
@@ -240,6 +261,20 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
                 <option key={s.id} value={s.id}>{s.name} ({s.categoryName})</option>
               ))}
             </select>
+          </Field>
+        )}
+
+        {needsOwner && (
+          <Field label="Stock owner" required hint="Who this stock belongs to in the destination store" asLabel={false}>
+            <select className={ui.input} value={ownerId} onChange={e => setOwnerId(e.target.value)}>
+              <option value="">Choose the owner…</option>
+              <option value={NO_OWNER}>No owner</option>
+              {owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              <option value={NEW_OWNER}>+ New owner…</option>
+            </select>
+            {ownerId === NEW_OWNER && (
+              <input autoFocus className={ui.input} value={newOwnerName} onChange={e => setNewOwnerName(e.target.value)} placeholder="Owner's name" />
+            )}
           </Field>
         )}
 
@@ -379,6 +414,23 @@ export default function StockMoveModal({ title, destinations, store, allStores, 
         <IconInfoCircle size={17} />
         <span>{note}</span>
       </div>
+
+      {openingBalance && (
+        <div className={`${ui.alert} ${ui.alertWarning}`}>
+          <IconAlertTriangle size={17} />
+          {needsOwner ? (
+            <span>
+              The owner can&apos;t be changed after saving. If it&apos;s wrong, delete the issue note in Documents and issue the
+              stock again. Stock shared by several owners is issued once per owner, each with that owner&apos;s quantity.
+            </span>
+          ) : (
+            <span>
+              Opening stock issued straight to a project or an external party is recorded with no owner. To record whose
+              it is, issue it to a store first and choose the owner there.
+            </span>
+          )}
+        </div>
+      )}
 
       {saved && (
         <div className={`${ui.alert} ${ui.alertSuccess}`}>

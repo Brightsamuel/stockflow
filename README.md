@@ -63,6 +63,8 @@ The app adds `connect_timeout=30` to the database URL when it isn't set, so a da
 
 An opening balance is entered on a product (Products) and held apart from the stores until it is issued. Issuing it to a store makes it that store's **opening stock**: stock on hand from the start, shown under *Opening* in the store's reports for any period (never as stock added that day) and included in its closing balance. Whatever has not been issued yet stays as *opening stock not yet in a store*; the **Stock balances** report shows it beside the stock in stores, so the whole inventory per item is in one place. Product history shows each issue once, as *Opening stock*.
 
+**Owners.** An opening balance has no owner: stock belonging to several owners can be entered as one quantity. Issuing it to a store asks whose it is (an owner, or *No owner*), and from then on it is that owner's stock in that store, in reports and on the issue note. Stock shared by several owners is issued once per owner. The owner can't be changed afterwards; to correct it, delete the issue note in Documents and issue the stock again. Opening stock issued straight to a project or an external party has no owner.
+
 ## Project stock and returns
 
 - **Received for a project.** On Stock in, choose *For project* when the stock was supplied for a project (e.g. by the contractor). It gets its own line in the store, marked *For <project>*.

@@ -29,7 +29,8 @@ export async function GET(req) {
 
 // POST /api/transfers
 // Body: { sourceStoreId, targetStoreId | projectId | recipientId, takenBy?, issuedBy?, receivedBy?, refNo?, entryDate?,
-//         items: [{ entryId, quantity }] }   (issuedBy / receivedBy: names typed for the note's signature blocks)
+//         items: [{ entryId, quantity }], ownerId? }   (issuedBy / receivedBy: names typed for the note's signature blocks)
+// ownerId: only when issuing opening stock to a store, the owner the stock belongs to there.
 // targetStoreId = transfer between stores; projectId / recipientId = stock out (leaves the inventory as used/issued).
 // A stock out to a project must say who is taking it to the field (takenBy).
 // The same movement saved again within a few minutes returns 409 { duplicate: true } unless
@@ -37,7 +38,7 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const user = await requireEditor()
-    const { sourceStoreId, targetStoreId, projectId, recipientId, takenBy, issuedBy, receivedBy, refNo, entryDate, items, confirmDuplicate } = await req.json()
+    const { sourceStoreId, targetStoreId, projectId, recipientId, takenBy, issuedBy, receivedBy, refNo, entryDate, items, ownerId, confirmDuplicate } = await req.json()
     const names = {
       handedOverBy: personName(issuedBy, targetStoreId ? "Dispatched by" : "Issued by"),
       // A project's stock is received by whoever takes it (Taken by)
@@ -65,6 +66,14 @@ export async function POST(req) {
     // An opening balance issued to a store becomes that store's opening stock
     const openingStock = sourceStore.category.isSystem && Boolean(targetStoreId)
     const sourceUserId = sourceStore.category.trackLogs ? user.id : null
+
+    // Opening stock has no owner until it is issued to a store; the owner is chosen then
+    let targetOwnerId = null
+    if (ownerId) {
+      if (!openingStock) return fail("A stock owner can only be chosen when issuing opening stock to a store")
+      if (!(await prisma.stockOwner.findUnique({ where: { id: ownerId }, select: { id: true } }))) return fail("Stock owner not found", 404)
+      targetOwnerId = ownerId
+    }
 
     let outNote, inNote, targetUserId = null
     if (targetStoreId) {
@@ -127,6 +136,7 @@ export async function POST(req) {
         transferUserId: sourceUserId || targetUserId ? user.id : null,
         ...names,
         openingStock,
+        targetOwnerId,
       }),
       { timeout: 20000 },
     )

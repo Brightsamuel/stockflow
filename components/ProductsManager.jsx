@@ -65,6 +65,10 @@ function OpeningFields({ qty, rate, onQty, onRate, hint }) {
       <span className={ui.hint}>
         Amount: <strong className={ui.strong}>{fmtMoney(amount)}</strong>. {hint ?? 'Treated as stock held from the start; issue it to a store, a project or an external party.'}
       </span>
+      <span className={ui.hint}>
+        Opening stock has no owner yet. When you issue it to a store you choose whose it is, so stock belonging to
+        different owners can be entered here as one quantity.
+      </span>
     </div>
   )
 }
@@ -425,6 +429,7 @@ export default function ProductsManager({ initialProducts, units, allStores, isA
           allStores={allStores}
           initialItemId={issuingStore.items[0].id}
           allowNext={false}
+          openingBalance
           onClose={() => setModal(null)}
           onDone={() => { setModal(null); reload() }}
         />
