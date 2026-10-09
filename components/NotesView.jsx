@@ -76,19 +76,20 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
     window.history.replaceState(null, '', `/notes${search ? `?${search}` : ''}`)
   }
 
-  function onDeleted(note) {
+  function onDeleted(note, more = 0) {
     setDeleting(null)
-    toast(`${noteName(note)} deleted. Its stock has been put back.`, { action: { label: 'See deleted notes', href: '/notes?tab=deleted' } })
+    toast(more ? `${noteName(note)} deleted with ${plural(more, 'other note')}.` : `${noteName(note)} deleted. Its stock has been put back.`, { action: { label: 'See deleted notes', href: '/notes?tab=deleted' } })
     router.refresh()
   }
 
   async function restore(deletion) {
     const item = deletion.kind === 'ITEM'
+    const more = deletion.document?.withNotes?.length ?? 0
     const ok = await confirm({
       title: item ? 'Restore item' : 'Restore note',
       message: item
         ? `Restore ${deletion.summary}?\n\nIts history comes back to the product's history, reports and its notes, and the item goes back to the store's Removed items.`
-        : `Restore ${noteName(deletion)}?\n\nIts ${plural(deletion.itemCount, 'line')} count again in stock, reports and product history, and the stock moves again as it did when it was recorded. Every store involved must still have enough stock.`,
+        : `Restore ${noteName(deletion)}${more ? ` and the ${plural(more, 'note')} deleted with it` : ''}?\n\nIts ${plural(deletion.itemCount, 'line')}${more ? ' and theirs' : ''} count again in stock, reports and product history, and the stock moves again as it did when it was recorded. Every store involved must still have enough stock.`,
       confirmLabel: item ? 'Restore item' : 'Restore note',
     })
     if (!ok) return
@@ -258,6 +259,7 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
                         <td>
                           <span className={ui.cellStrong}>{d.title}</span>
                           <span className={`${ui.cellSub} ${d.refNo ? ui.mono : ''}`}>{d.refNo ?? 'No ref no.'}</span>
+                          {d.document?.withNotes?.length > 0 && <span className={ui.cellSub}>+ {plural(d.document.withNotes.length, 'note')} deleted with it</span>}
                         </td>
                         <td>
                           {d.summary}
@@ -326,6 +328,14 @@ export default function NotesView({ refNo, logId, notes, settings, canDelete = f
             </span>
           </div>
           <ReportDocument {...toDocument(viewing.document)} settings={settings} />
+          {viewing.document?.withNotes?.length > 0 && (
+            <>
+              <span className={ui.sectionLabel}>Deleted with it: {plural(viewing.document.withNotes.length, 'note')}</span>
+              {viewing.document.withNotes.map(doc => (
+                <ReportDocument key={doc.id} {...toDocument(doc)} settings={settings} />
+              ))}
+            </>
+          )}
         </Modal>
       )}
     </>

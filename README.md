@@ -89,7 +89,11 @@ A Super admin can delete a whole received, issue or transfer note from **Documen
 
 Nothing is erased. The note's lines stay in the database marked as deleted, and are left out of stock, reports, product history, documents and the movement log. **Documents → Deleted** lists every deleted note with who deleted it, when and why; each can be viewed and restored, which counts it again and moves its stock back as it was recorded.
 
-A delete (or restore) is refused rather than let a balance go below zero: for example a receipt whose stock has since been issued, until that issue is dealt with. Opening balances are changed from Products, not deleted as notes.
+A note whose stock has since been issued or moved on can't go alone: the notes that took its stock would then be moving stock that was never there, and the numbers would stop adding up. So the dialog lists those notes (issue notes, transfers and, through a transfer, what the other store issued) and each must be ticked to go with it; the button stays off until everything that depends on the note is ticked. Where the stock was mixed with other stock in the same store row, only enough of the issues to cover the note are needed, and the user ticks the ones made in error. Removals or quantity edits made in the store to get rid of the note are undone with it. The note and the notes ticked with it become one deletion, listed under Deleted with them inside it, and one restore brings everything back. The dialog also shows what stops counting as issued to each project or party.
+
+Nothing else is ever left inconsistent: a delete (or restore) is still refused rather than let a balance go below zero, let a project have returned more than it was issued, or leave a stock out dated before any of its stock arrived. Opening balances are changed from Products, not deleted as notes.
+
+To get rid of a wrong delivery note, use *Delete note*, not Remove item and Delete for good in the store: those leave the note in place and add Removed / Adjusted lines to the reports.
 
 ### Editing a Goods Received Note
 

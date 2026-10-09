@@ -113,7 +113,8 @@ export default function DeleteForGoodModal({ entry, storeName, onClose, onDone }
               <span>Some of this stock was moved or used, and those records depend on it:</span>
               {plan.kept.map(k => <span key={k}>{k}</span>)}
               <span className={ui.alertNote}>
-                To take it out of the history too, delete those notes in Documents first, then delete this item for good.
+                If the delivery note it came in on was wrong, delete that note in Documents instead: the notes that issued
+                its stock are listed there to go with it, and the item leaves the history with them.
               </span>
             </div>
           </div>

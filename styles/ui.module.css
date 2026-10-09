@@ -637,6 +637,23 @@ select.inputSm { padding-right: 30px; background-position: right 8px center; }
 .toggleOn,
 .toggleOn:hover { background: var(--warning-soft); border-color: #fde047; color: #854d0e; }
 
+/* Things to tick one by one, e.g. the notes deleted with a note */
+.tickList { display: flex; flex-direction: column; gap: 6px; }
+.tickItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+.tickItem:hover { border-color: var(--border-hover); background: var(--surface-muted); }
+.tickItem input { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0; accent-color: var(--danger); cursor: pointer; }
+.tickItemOn,
+.tickItemOn:hover { border-color: #fecaca; background: var(--danger-soft); }
+
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   display: inline-flex;
